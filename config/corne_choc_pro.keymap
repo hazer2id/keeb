@@ -151,6 +151,11 @@
             bindings = <&kp RET>;
             layers = <0 1 2 3>;
         };
+        combo_tab {
+            key-positions = <12 14>;
+            bindings = <&kp TAB>;
+            layers = <0 1 2 3>;
+        };
         combo_bspc {
             key-positions = <1 3>;
             bindings = <&kp BSPC>;
@@ -234,18 +239,18 @@
       base1_layer {
          display-name = "BASE1";
          bindings = <
-            &kp Y &kp P &kp A &kp L &none       &none &none &none &none &none &none &none
-            &kp S &kp T &kp E &kp R &kp Q       &none &none &none &none &none &none &none
-            &kp X &kp F &kp I &kp N &lang1 KOR1             &none &none &none &none &none
+            &kp P &kp M &kp X &kp Y &none       &none &none &none &none &none &none &none
+            &kp S &kp T &kp R &kp E &kp J       &none &none &none &none &none &none &none
+            &kp F &kp D &kp N &kp I &lang1 KOR1             &none &none &none &none &none
             &sl ARROWS &sl BASE2 &sl SYM1 &none &none &none
             >;
       };
       base2_layer {
          display-name = "BASE2";
          bindings = <
-            &kp W &kp V &kp U &kp B &none       &none &none &none &none &none &none &none
-            &kp H &kp C &kp O &kp D &kp Z       &none &none &none &none &none &none &none
-            &kp K &kp G &kp J &kp M &lang2 KOR1             &none &none &none &none &none
+            &kp W &kp B &kp K &kp Z &none       &none &none &none &none &none &none &none
+            &kp U &kp C &kp L &kp A &kp Q       &none &none &none &none &none &none &none
+            &kp V &kp G &kp H &kp O &lang2 KOR1             &none &none &none &none &none
             &trans &to BASE1 &trans &none &none &none
             >;
       };
@@ -263,7 +268,7 @@
          bindings = <
             &tdp  &tdo  &kp M &kp L &none        &none &none &none &none &none &none &none
             &kp N &kp K &kp J &kp H &kp G        &none &none &none &none &none &none &none
-            &kp B &kp L &kp U &kp Y &lang2 BASE1             &none &none &none &none &none
+            &kp B &kp I &kp U &kp Y &lang2 BASE1             &none &none &none &none &none
             &trans &to KOR1 &trans &none &none &none
             >;
       };
@@ -272,7 +277,7 @@
          bindings = <
             &kp HOME &kp PG_DN &kp PG_UP &kp END   &none &none &none &none &none &none &none &none
             &kp LEFT &kp DOWN  &kp UP    &kp RIGHT &none &none &none &none &none &none &none &none
-            &sl FUNS &kp CAPS  &kp LC(B) &kp TAB   &none             &none &none &none &none &none
+            &sl FUNS &kp INS   &kp LC(B) &kp CAPS  &none             &none &none &none &none &none
             &none &none &none &none &none &none
             >;
       };
@@ -281,7 +286,7 @@
          bindings = <
             &bt BT_CLR &bt BT_SEL 2 &bt BT_SEL 1 &bt BT_SEL 0 &none &none &none &none &none &none &none &none
             &none      &kp C_VOL_DN &kp C_VOL_UP &kp C_PP     &none &none &none &none &none &none &none &none
-            &none      &kp C_BRI_DN &kp C_BRI_UP &kp INS      &none             &none &none &none &none &none
+            &none      &kp C_BRI_DN &kp C_BRI_UP &none        &none             &none &none &none &none &none
             &none &none &none &none &none &none
             >;
       };

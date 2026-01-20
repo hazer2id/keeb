@@ -37,9 +37,10 @@ class Layout:
 	total: int = 0
 	left_usage: int = 0
 	right_usage: int = 0
+	source: str = "random"
 
 	def clone(self):
-		return Layout([row[:] for row in self.letters])
+		return Layout([row[:] for row in self.letters], source=self.source)
 
 	def __post_init__(self):
 		self.letters = copy.deepcopy(self.letters)
@@ -100,7 +101,7 @@ class Layout:
 					weight *= 0.5
 				self.score.sfb += count * weight * (e1+e2)
 			elif abs(f1 - f2) == 1:
-				if row_delta == 2 or (4 <= c1 <= 5  or 4 <= c2 <= 5):
+				if row_delta == 2 or (4<=c1<=5 or 4<=c2<=5):
 					weight = 0.5 if (c1 <= 4 and 5 <= c2) else 1.0
 					self.score.scissors += count * weight * (e1+e2)
 				else:
@@ -144,9 +145,10 @@ class Layout:
 				if is_inroll or is_outroll:
 					if row_delta1 == 2 or row_delta2 == 2:
 						if row_delta1 == row_delta2:
+							weight = 1.0
 							if (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3):
 								weight *= 0.5
-							self.score.scissors += count * (e1+e2+e3) * 0.5
+							self.score.scissors += count * weight * (e1+e2+e3) * 0.5
 						continue
 
 					if is_inroll:
@@ -165,17 +167,17 @@ class Layout:
 
 	def calc_total_score(self):
 		def norm(v, m, d):
-			return (v - m) / d if d != 0 else 0.0
+			return (v - m) / d
 
 		r = Score(
-			effort=norm(self.score.effort, SCORE_MEDIAN.effort, SCORE_IQR.effort),
-			sfb=norm(self.score.sfb, SCORE_MEDIAN.sfb, SCORE_IQR.sfb),
-			rolling=norm(self.score.rolling, SCORE_MEDIAN.rolling, SCORE_IQR.rolling),
-			scissors=norm(self.score.scissors, SCORE_MEDIAN.scissors, SCORE_IQR.scissors),
-			redirect=norm(self.score.redirect, SCORE_MEDIAN.redirect, SCORE_IQR.redirect),
+			effort=norm(self.score.effort, SCORE_MEDIAN.effort, SCORE_SCALE.effort),
+			sfb=norm(self.score.sfb, SCORE_MEDIAN.sfb, SCORE_SCALE.sfb),
+			rolling=norm(self.score.rolling, SCORE_MEDIAN.rolling, SCORE_SCALE.rolling),
+			scissors=norm(self.score.scissors, SCORE_MEDIAN.scissors, SCORE_SCALE.scissors),
+			redirect=norm(self.score.redirect, SCORE_MEDIAN.redirect, SCORE_SCALE.redirect),
 		)
 
-		self.total = (
+		self.total = int(
 			(-r.effort) * SCORE_RATES.effort +
 			(-r.sfb) * SCORE_RATES.sfb +
 			(r.rolling) * SCORE_RATES.rolling +
@@ -185,8 +187,7 @@ class Layout:
 
 TMP_PATH = None
 ANALYZE_RESULT_FILENAME = 'analyze_result.tsv'
-BEST_RESULT_FILENAME = 'best.txt'
-BEST_SIZE = 10
+RESULT_FILENAME = 'best.txt'
 
 LETTERS = Counter()
 BIGRAMS = Counter()
@@ -207,23 +208,23 @@ FINGER_GRID = [
 ]
 
 SCORE_RATES = Score(
-	effort = 0.25,
-	sfb = 0.3,
-	rolling = 0.10,
-	scissors = 0.10,
-	redirect = 0.25
+	effort = 0.35,
+	sfb = 0.35,
+	scissors = 0.15,
+	redirect = 0.10,
+	rolling = 0.05,
 )
 SCORE_MEDIAN = None
-SCORE_IQR = None
+SCORE_SCALE = None
 
 def layout_key(l):
 	return (
 		l.total,
 		l.left_usage,
-		-l.score.sfb,
 		-l.score.effort,
-		-l.score.redirect,
+		-l.score.sfb,
 		-l.score.scissors,
+		-l.score.redirect,
 		l.score.rolling,
 	)
 
@@ -234,32 +235,14 @@ def sort_layouts(layouts: list[Layout]):
 	layouts.sort(key=layout_key, reverse=True)
 	return layouts
 
-def sort_unique_layouts(layouts: list[Layout], size=BEST_SIZE):
+def sort_unique_layouts(layouts: list[Layout], size):
 	layouts = sort_layouts(list(set(layouts)))
-	result = []
-
-	for layout in layouts:
-		if len(result) == size:
-			break
-
-		a = "".join("".join(r[:4] + r[6:]) for r in layout.letters)
-		is_unique = True
-		for l in result:
-			b = "".join("".join(r[:4] + r[6:]) for r in l.letters)
-
-			if a == b or a == b[::-1] or 20 <= sum(1 for c1, c2 in zip(a, b) if c1 == c2):
-				is_unique = False
-				break
-
-		if is_unique:
-			result.append(layout)
-
-	return result
+	return layouts[:size]
 
 def init_score_state():
-	global SCORE_MEDIAN, SCORE_IQR 
+	global SCORE_MEDIAN, SCORE_SCALE
 	def iqr(v):
-		q = statistics.quantiles(v, n=4)
+		q = statistics.quantiles(v, n=4, method="inclusive")
 		return q[2] - q[0]
 
 	base_layout = make_initial_layout()
@@ -270,13 +253,19 @@ def init_score_state():
 
 	vals = {f.name: [getattr(l.score, f.name) for l in layouts] for f in fields(Score)}
 
-	SCORE_MEDIAN = Score(**{k: statistics.median(v) for k, v in vals.items()})
-
+	med_map = {}
 	iqr_map = {}
 	for k, v in vals.items():
 		d = iqr(v)
-		iqr_map[k] = d if d != 0 else 1e-9
-	SCORE_IQR = Score(**iqr_map)
+		med = statistics.median(v)
+		if d == 0:
+			d = max(abs(med), 1) * 1e-9
+
+		iqr_map[k] = d
+		med_map[k] = med
+
+	SCORE_SCALE = Score(**iqr_map)
+	SCORE_MEDIAN = Score(**med_map)
 
 def check_target_url(url):
 	try:
@@ -644,7 +633,7 @@ def crossover(parents: list[Layout], blank=' '):
 		if child[i] is None:
 			child[i] = next(it)
 
-	return Layout(unflatten(child))
+	return Layout(unflatten(child), source=parents[0].source+"->crossover")
 
 def fine_tune_effort(base_layout: Layout):
 	letters = [row[:] for row in base_layout.letters]
@@ -664,9 +653,11 @@ def fine_tune_effort(base_layout: Layout):
 		l[r][c], l[best[0]][best[1]] = l[best[0]][best[1]], l[r][c]
 		candidates.append(Layout(l))
 
-	return best_layout(candidates)
+	best = best_layout(candidates)
+	best.source = base_layout.source+"->fine_tune" if best != base_layout else base_layout.source
+	return best
 
-def optimize_effort(base_layout: Layout):
+def optimize_effort(base_layout: Layout, result_len):
 	orders = ['effort_asc', 'effort_desc', 'count_asc', 'count_desc']
 	letters = [row[:] for row in base_layout.letters]
 	layouts = {base_layout.clone()}
@@ -697,19 +688,20 @@ def optimize_effort(base_layout: Layout):
 						continue
 					l = [row[:] for row in letters]
 					l[r1][c1], l[r2][c2] = l[r2][c2], l[r1][c1]
-					layouts.add(Layout(l))
-	
-	return best_layout(list(layouts))
+					layouts.add(Layout(l, source=base_layout.source+"->effort"))
 
-def optimize_swap(base_layout: Layout, temperature, fix=0):
+	return sort_unique_layouts(list(layouts), result_len)
+
+def optimize_swap(base_layout: Layout, temperature, max_temp, fix=0):
 	n = None
+	t = temperature / max_temp
 	if fix == 0:
-		if temperature > 50:
+		if t > 0.6:
+			n = random.choices([6, 7, 8], weights=[0.4, 0.4, 0.2], k=1)[0]
+		elif t > 0.2:
 			n = random.choices([4, 5, 6], weights=[0.5, 0.3, 0.2], k=1)[0]
-		elif temperature > 10:
-			n = random.choices([3, 4], weights=[0.7, 0.3], k=1)[0]
 		else:
-			n = random.choices([2, 3], weights=[0.8, 0.2], k=1)[0]
+			n = random.choices([2, 3, 4], weights=[0.7, 0.2, 0.1], k=1)[0]
 	else:
 		n = fix
 
@@ -730,21 +722,11 @@ def optimize_swap(base_layout: Layout, temperature, fix=0):
 		r2, c2 = shuffled[i]
 		letters[r1][c1], letters[r2][c2] = letters[r2][c2], letters[r1][c1]
 
-	return Layout(letters)
+	return Layout(letters, source=base_layout.source)
 
-def optimize_shuffle(base_layout: Layout, phase=1):
-	if phase ==	1:
-		length = 6
-		letters = random.sample(list(LETTERS.keys()), length)
-	elif phase == 2:
-		length = 8
-		exclude = {row[i] for row in base_layout.letters for i in (4, 5)}
-		available = [k for k in LETTERS.keys() if k not in exclude]
-		letters = random.sample(available, length)
-	elif phase == 3:
-		letters = [row[i] for row in base_layout.letters for i in (4, 5)]
-
-	layouts = []
+def optimize_shuffle(base_layout: Layout, result_len, length=6):
+	letters = random.sample(list(LETTERS.keys()), length)
+	layouts = [base_layout.clone()]
 	l = [row[:] for row in base_layout.letters]
 	positions = [(r, c) for r in range(3) for c in range(10) if base_layout.letters[r][c] in letters]
 	perms = permutations(letters, len(letters))
@@ -752,18 +734,19 @@ def optimize_shuffle(base_layout: Layout, phase=1):
 	for perm in perms:
 		for (r, c), ch in zip(positions, perm):
 			l[r][c] = ch
-		layouts.append(Layout(l))
+		layouts.append(Layout(l, source=base_layout.source+"->shuffle"))
 
-	return sort_unique_layouts(layouts)
+	return sort_unique_layouts(layouts, result_len)
 
-def optimize_sa(base_layout: Layout, max_iter=10000, initial_temp=50.0, cooling_rate=0.9985, max_unimproved=2000):
+def optimize_sa(base_layout: Layout, result_len, max_iter=10000, initial_temp=50.0, cooling_rate=0.9985, max_unimproved=2000):
 	best = base_layout.clone()
 	cur = base_layout.clone()
 	temperature = initial_temp
 	unimproved = 0
+	result = [best.clone()]
 
 	for i in range(max_iter):
-		new_layout = optimize_swap(cur, temperature)
+		new_layout = optimize_swap(cur, temperature, initial_temp)
 
 		diff = new_layout.total - cur.total
 		T = max(temperature, 1e-6)
@@ -777,6 +760,8 @@ def optimize_sa(base_layout: Layout, max_iter=10000, initial_temp=50.0, cooling_
 			cur = new_layout
 			if cur.total > best.total:
 				best = cur.clone()
+				best.source += "->sa"
+				result.append(best.clone())
 				temperature *= 1.05
 				unimproved = 0
 		temperature *= cooling_rate
@@ -784,49 +769,71 @@ def optimize_sa(base_layout: Layout, max_iter=10000, initial_temp=50.0, cooling_
 		if unimproved > max_unimproved or temperature < 1e-3:
 			break
 
-	return best
+	return sort_unique_layouts(result, result_len)
 
-def optimize(base_layouts: list[Layout], max_generation=10, max_population=100):
-	best = [l.clone() for l in base_layouts[:BEST_SIZE]]
+def optimize(base_layouts: list[Layout], elites_len=10, max_population=100):
+	max_generation = elites_len*10
+	elites = [l.clone() for l in base_layouts[:elites_len]]
 
 	# Init population
-	unique_population = {best[0].clone()}
+	unique_population = {l.clone() for l in base_layouts}
 	while len(unique_population) < max_population:
-		unique_population.add(make_random(best[0]))
+		unique_population.add(make_random(base_layouts[0]))
 	population = sort_layouts(list(unique_population))
 	
-	elites_len = max(1, int(max_population * 0.05))
 	with ProcessPoolExecutor() as executor:
+		prev = elites[-1].total
 		for gen in range(1, max_generation+1):
 			print(f'\r\033[K...{gen}/{max_generation}', end='')
 			random_len = int(max_population* max(0.05, 0.3 * (1 - gen/ max_generation)))
+			elite_inject = max(1, round(elites_len * min(gen / (max_generation * 0.8), 1.0)))
 
-			elites = [l.clone() for l in population[:elites_len]]
-			parents = [best_layout(random.sample(population, 3)) for _ in range(max_population)]
-			children = [crossover(random.sample(parents, 2)) for _ in range(max_population - elites_len - random_len)]
+			parents_pool = population + elites
+			parents = [best_layout(random.sample(parents_pool, 3)) for _ in range(max_population)]
+			children = [crossover(random.sample(parents, 2)) for _ in range(max_population - elite_inject - random_len)]
 
 			# Make next
 			population = []
-			for elite in elites:
-				population.append(fine_tune_effort(elite))
-			for _ in range(random_len):
-				population.append(make_random(best[0]))
 			progress = min(gen/max_generation, 1.0)
-			results = list(executor.map(
+			result = list(executor.map(
 				optimize_worker,
-				children,
-				[progress] * len(children)
+				children + elites[:elite_inject],
+				[progress] * (len(children)+elite_inject),
+				[elites_len] * (len(children)+elite_inject)
 			))
-			population.extend(results)
+			for r in result:
+				population.extend(r)
+			population = sort_unique_layouts(population, max_population-random_len)
+			while len(population) < max_population:
+				population.append(make_random(elites[0]))
 			population = sort_layouts(population)
 
-			cur = best_layout(population)
-			best.extend([l.clone() for l in population[:BEST_SIZE*2]])
-			best = sort_layouts(list(set(best)))
+			# Elites
+			elites.extend([fine_tune_effort(l) for l in population[:elites_len*2]])
+			elites = sort_unique_layouts(elites, elites_len)
 
-	return best[:BEST_SIZE*2]
+			if prev != elites[-1].total:
+				print(f'\t improved', end='')
 
-def optimize_worker(layout: Layout, progress):
+				enhanced_elites = [optimize_detail(e, elites_len) for e in elites]
+				for e in enhanced_elites:
+					elites.extend(e)
+				elites = sort_unique_layouts(elites, elites_len)
+
+				print(f' ({prev:,} -> {elites[-1].total:,})')
+				print_layout(elites[0])
+				print('')
+				prev = elites[-1].total
+				save_result(elites, result_path)
+
+	enhanced_elites = [optimize_detail(e, elites_len) for e in elites]
+	for e in enhanced_elites:
+		elites.extend(e)
+	elites = sort_unique_layouts(elites, elites_len)
+	save_result(elites, result_path)
+	return elites
+
+def optimize_worker(layout: Layout, progress, result_len):
 	sa_weight = 0.2 + 0.2 * progress   # 0.2 - 0.4
 	effort_weight = 0.2 + 0.1 * progress  # 0.2 - 0.3
 	swap_weight = 0.3 - 0.05 * progress  # 0.3 - 0.25
@@ -845,13 +852,27 @@ def optimize_worker(layout: Layout, progress):
 
 	r = random.random()
 	if r < thresholds[0]:
-		return optimize_sa(layout)
+		return optimize_sa(layout, result_len)
 	elif r < thresholds[1]:
-		return optimize_effort(layout)
+		return optimize_effort(layout, result_len)
 	elif r < thresholds[2]:
-		return optimize_shuffle(layout)[0]
+		return optimize_shuffle(layout, result_len)
 	else:
-		return layout
+		return [layout]
+
+def optimize_detail(layout: Layout, result_len):
+	with ProcessPoolExecutor() as executor:
+		result = []
+		r = list(executor.map(
+			optimize_shuffle,
+			[layout] * multiprocessing.cpu_count(),
+			[result_len] * multiprocessing.cpu_count(),
+			[8] * multiprocessing.cpu_count()
+		))
+		for rr in r:
+			result.extend(rr)
+
+		return sort_unique_layouts(result, result_len)
 
 def print_layout(layout: Layout):
 	print(f'{layout.score.effort:,.0f}\t', end='')
@@ -864,39 +885,29 @@ def print_layout(layout: Layout):
 		left_percent = (layout.left_usage / total) * 100
 		right_percent = (layout.right_usage / total) * 100
 		print(f'{left_percent:.2f} : {right_percent:.2f} \t {layout.total:,}')
+		print(f'{layout.source}')
 	for row in layout.letters:
 		print(row)
 
-def save_best_result(best, result_path):
-	file_path = os.path.join(result_path, BEST_RESULT_FILENAME)
+def save_result(layouts, result_path):
+	file_path = os.path.join(result_path, RESULT_FILENAME)
 	with open(file_path, 'w', encoding='utf-8') as f:
-		for l in best:
+		for l in layouts:
+			print(l.source, file=f)
 			for row in l.letters:
 				print(row, file=f)
 
-def load_best_result(result_path):
+def load_result(result_path):
 	layouts = []
-	file_path = os.path.join(result_path, BEST_RESULT_FILENAME)
+	file_path = os.path.join(result_path, RESULT_FILENAME)
 	with open(file_path, 'r', encoding='utf-8') as f:
 		lines = [line.strip() for line in f if line.strip()]
-	for i in range(0, len(lines), 3):
-		layouts.append(Layout([literal_eval(l) for l in lines[i:i+3]]))
+	for i in range(0, len(lines), 4):
+		layouts.append(Layout([literal_eval(l) for l in lines[i+1:i+4]], source=lines[i]))
 	return layouts
 
-def optimize_detail(layouts: list[Layout]):
-	with ProcessPoolExecutor() as executor:
-		results = []
-		for layout in layouts:
-			result = list(executor.map(
-				optimize_shuffle,
-				[layout] * multiprocessing.cpu_count(),
-				[2] * multiprocessing.cpu_count()
-			))
-			for r in result:
-				results.extend(r)
-		return results
-
 if __name__ == '__main__':
+	multiprocessing.set_start_method("fork")
 	signal.signal(signal.SIGINT, cleanup)
 	try:
 		if len(sys.argv) != 2:
@@ -917,44 +928,16 @@ if __name__ == '__main__':
 
 		# Optimize
 		init_score_state()
-		file_path = os.path.join(result_path, BEST_RESULT_FILENAME)
+		file_path = os.path.join(result_path, RESULT_FILENAME)
 		if os.path.exists(file_path):
-			best = load_best_result(result_path)
+			result = load_result(result_path)
 		else:
-			best = [make_initial_layout()]
+			result = [make_initial_layout()]
 
 		print(f'[Optimize]')
-		unimproved = 0
-		r = 0
-		while unimproved < BEST_SIZE*10:
-			r += 1
-			candy = best
-			prev = [l.clone() for l in best]
-
-			best.extend(optimize(candy))
-			best = sort_unique_layouts(best)
-
-			if prev and prev[-1] == best[-1]:
-				unimproved += 1
-				print(f'\t [{r}]unimproved: {unimproved}')
-			else:
-				unimproved = 0
-				print(f'\t [{r}]improved')
-				best.extend(optimize_detail(candy))
-				best = sort_unique_layouts(best)
-				save_best_result(best, result_path)
-				for i, l in enumerate(best, 1):
-					print(f'[{i}]')
-					print_layout(l)
-
-		print(f'\r\033[K...[{r}]Done')
-		result = []
-		for l in best:
-			result.extend(optimize_shuffle(l, 3))
-		best.extend(result)
-		best = sort_unique_layouts(best)
-		save_best_result(best, result_path)
-		for i, l in enumerate(best, 1):
+		result = optimize(result)
+		print(f'\r\033[K...Done')
+		for i, l in enumerate(result, 1):
 			print(f'[{i}]')
 			print_layout(l)
 
