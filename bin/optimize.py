@@ -187,7 +187,7 @@ class Layout:
 
 TMP_PATH = None
 ANALYZE_RESULT_FILENAME = 'analyze_result.tsv'
-RESULT_FILENAME = 'best.txt'
+RESULT_FILENAME = 'result.txt'
 
 LETTERS = Counter()
 BIGRAMS = Counter()
@@ -237,7 +237,25 @@ def sort_layouts(layouts: list[Layout]):
 
 def sort_unique_layouts(layouts: list[Layout], size):
 	layouts = sort_layouts(list(set(layouts)))
-	return layouts[:size]
+	result = []
+
+	for layout in layouts:
+		if len(result) == size:
+			break
+
+		a = flatten(layout.letters)
+		is_unique = True
+		for l in result:
+			b = flatten(l.letters)
+
+			if a == b or 20 < sum(1 for c1, c2 in zip(a, b) if c1 == c2):
+				is_unique = False
+				break
+
+		if is_unique:
+			result.append(layout)
+
+	return result
 
 def init_score_state():
 	global SCORE_MEDIAN, SCORE_SCALE
@@ -613,8 +631,8 @@ def make_random(base_layout: Layout) -> Layout:
 	return layout
 
 def crossover(parents: list[Layout], blank=' '):
-	def flatten(layout):
-		return [item for row in layout for item in row]
+	def flatten(letters):
+		return [item for row in letters for item in row]
 	def unflatten(flat, rows=3, cols=10):
 		return [flat[i*cols:(i+1)*cols] for i in range(rows)]
 
@@ -771,8 +789,9 @@ def optimize_sa(base_layout: Layout, result_len, max_iter=10000, initial_temp=50
 
 	return sort_unique_layouts(result, result_len)
 
-def optimize(base_layouts: list[Layout], elites_len=10, max_population=100):
+def optimize(base_layouts: list[Layout], elites_len=10):
 	max_generation = elites_len*10
+	max_population = elites_len*10
 	elites = [l.clone() for l in base_layouts[:elites_len]]
 
 	# Init population
@@ -809,7 +828,7 @@ def optimize(base_layouts: list[Layout], elites_len=10, max_population=100):
 			population = sort_layouts(population)
 
 			# Elites
-			elites.extend([fine_tune_effort(l) for l in population[:elites_len*2]])
+			elites.extend([fine_tune_effort(l) for l in population])
 			elites = sort_unique_layouts(elites, elites_len)
 
 			if prev != elites[-1].total:
