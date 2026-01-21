@@ -142,42 +142,42 @@
             layers = <6>;
         };
         combo_space {
-            key-positions = <13 15>;
+            key-positions = <13 14>;
             bindings = <&kp SPACE>;
             layers = <0 1 2 3 6>;
         };
-        combo_ret {
-            key-positions = <12 15>;
-            bindings = <&kp RET>;
-            layers = <0 1 2 3>;
-        };
         combo_tab {
-            key-positions = <12 14>;
+            key-positions = <14 15>;
             bindings = <&kp TAB>;
             layers = <0 1 2 3>;
         };
+        combo_esc {
+            key-positions = <25 26>;
+            bindings = <&kp ESC>;
+            layers = <0 1 2 3>;
+        };
+        combo_ret {
+            key-positions = <26 27>;
+            bindings = <&kp RET>;
+            layers = <0 1 2 3>;
+        };
         combo_bspc {
-            key-positions = <1 3>;
+            key-positions = <1 2>;
             bindings = <&kp BSPC>;
             layers = <0 1 2 3>;
         };
         combo_del {
-            key-positions = <0 3>;
+            key-positions = <2 3>;
             bindings = <&kp DEL>;
             layers = <0 1 2 3>;
         };
-        combo_esc {
-            key-positions = <25 27>;
-            bindings = <&kp ESC>;
-            layers = <0 1 2 3>;
-        };
         combo_lshft {
-            key-positions = <24 27>;
+            key-positions = <12 15>;
             bindings = <&sk LSHFT>;
             layers = <0 1 2 3>;
         };
         combo_cw {
-            key-positions = <24 26>;
+            key-positions = <24 27>;
             bindings = <&caps_word>;
             layers = <0 1 2 3>;
         };
