@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env pypy3
 
 import urllib.request
 import urllib.error
@@ -22,15 +22,16 @@ import statistics
 import sys
 from itertools import permutations
 
-@dataclass
+@dataclass(slots=True)
 class Score:
 	effort: int = 0
 	sfb: int = 0
 	rolling: int = 0
 	scissors: int = 0
 	redirect: int = 0
+	switching: int = 0
 
-@dataclass
+@dataclass(slots=True)
 class Layout:
 	letters: list[list[str]]
 	score: Score = field(default_factory=lambda: Score())
@@ -40,10 +41,13 @@ class Layout:
 	source: str = "random"
 
 	def clone(self):
-		return Layout([row[:] for row in self.letters], source=self.source)
+		return Layout(
+			[row[:] for row in self.letters],
+			source=self.source,
+		)
 
 	def __post_init__(self):
-		self.letters = copy.deepcopy(self.letters)
+		self.letters = [r[:] for r in self.letters]
 		self.calc_scores()
 		if SCORE_MEDIAN is not None:
 			self.calc_total_score()
@@ -51,119 +55,77 @@ class Layout:
 	def __eq__(self, other):
 		if not isinstance(other, Layout):
 			return False
-		return self.letters == other.letters
+		return self.letters == other.letters or self.letters == other.letters[::-1]
 
 	def __hash__(self):
 		return hash(tuple(tuple(r) for r in self.letters))
 
 	def calc_scores(self):
+		_effort_grid = EFFORT_GRID
+		_bigrams = BIGRAMS
+		_trigrams = TRIGRAMS
+		_bigram_score_table = BIGRAM_SCORE_TABLE
+		_trigram_score_table = TRIGRAM_SCORE_TABLE
+		pos = {}
+
+		sfb = 0
+		rolling = 0
+		scissors = 0
+		redirect = 0
+
 		self.score = Score()
 		self.left_usage = 0
 		self.right_usage = 0
-		pos = {}
-		max_e = max(max(r) for r in EFFORT_GRID)
 
-		for r in range(3):
-			for c in range(10):
+		for r in range(ROWS):
+			for c in range(COLS):
 				ch = self.letters[r][c]
 				if ch != ' ':
-					pos[ch] = (r, c)
+					pos[ch] = (r*COLS) + c
 					try:
 						l = LETTERS[ch]
 					except KeyError:
 						print('======= ERROR')
 						print_layout(self)
 						sys.exit(1)
-					self.score.effort += l * EFFORT_GRID[r][c]
+					self.score.effort += l * _effort_grid[r][c]
 					if c < 5:
 						self.left_usage += l
 					else:
 						self.right_usage += l
 
-		for pair, count in BIGRAMS.items():
+		for pair, count in _bigrams.items():
 			a, b = pair[0], pair[1]
 
 			if a not in pos or b not in pos:
 				continue
 
-			r1, c1 = pos[a]
-			r2, c2 = pos[b]
-			f1 = FINGER_GRID[r1][c1]
-			f2 = FINGER_GRID[r2][c2]
-			e1 = EFFORT_GRID[r1][c1]
-			e2 = EFFORT_GRID[r2][c2]
-			row_delta = abs(r1 - r2)
+			i = pos[a]
+			j = pos[b]
+			target_score = _bigram_score_table[i][j]
+			sfb += count * target_score.sfb
+			rolling += count * target_score.rolling
+			scissors += count * target_score.scissors
 
-			if f1 == f2:
-				weight = 2.5 if (4<=c1<=5 or 4<=c2<=5) else 1.0
-				weight += (row_delta*0.5)
-				if (c1 <= 4 and 5 <= c2):
-					weight *= 0.5
-				self.score.sfb += count * weight * (e1+e2)
-			elif abs(f1 - f2) == 1:
-				if row_delta == 2 or (4<=c1<=5 or 4<=c2<=5):
-					weight = 0.5 if (c1 <= 4 and 5 <= c2) else 1.0
-					self.score.scissors += count * weight * (e1+e2)
-				else:
-					if f2 < f1:
-						weight = 1.0 if row_delta == 0 else 0.5
-					else:
-						weight = 0.5 if row_delta == 0 else 0.25
-					if (c1 <= 4 and 5 <= c2):
-						weight *= 0.5
-					self.score.rolling += count * weight * (max_e*2 - (e1+e2))
-
-		for pair, count in TRIGRAMS.items():
+		for pair, count in _trigrams.items():
 			a, b, c = pair[0], pair[1], pair[2]
 
 			if a not in pos or b not in pos or c not in pos:
 				continue
 
-			r1, c1 = pos[a]
-			r2, c2 = pos[b]
-			r3, c3 = pos[c]
-			f1 = FINGER_GRID[r1][c1]
-			f2 = FINGER_GRID[r2][c2]
-			f3 = FINGER_GRID[r3][c3]
-			e1 = EFFORT_GRID[r1][c1]
-			e2 = EFFORT_GRID[r2][c2]
-			e3 = EFFORT_GRID[r3][c3]
+			i = pos[a]
+			j = pos[b]
+			k = pos[c]
+			target_score = _trigram_score_table[i][j][k]
+			sfb += count * target_score.sfb
+			rolling += count * target_score.rolling
+			scissors += count * target_score.scissors
+			redirect += count * target_score.redirect
 
-			if f1 == f3 and f1 != f2:
-				row_delta = abs(r1 - r3)
-				weight = 1.0 if c1 == c3 else 2.5
-				weight += (row_delta*0.5)
-				self.score.sfb += count * weight * (e1+e3) * 0.5
-			else:
-				is_inroll = (f3 < f2 < f1)
-				is_outroll = (f1 < f2 < f3)
-				row_delta1 = abs(r1 - r2)
-				row_delta2 = abs(r2 - r3)
-				row_delta_sum = row_delta1 + row_delta2
-				has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
-
-				if is_inroll or is_outroll:
-					if row_delta1 == 2 or row_delta2 == 2:
-						if row_delta1 == row_delta2:
-							weight = 1.0
-							if (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3):
-								weight *= 0.5
-							self.score.scissors += count * weight * (e1+e2+e3) * 0.5
-						continue
-
-					if is_inroll:
-						weight = 1.0 if row_delta_sum == 0 else 0.5
-					else:
-						weight = 0.5 if row_delta_sum == 0 else 0.25
-					if has_gap: weight *= 0.5
-					if (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3):
-						weight *= 0.5
-					self.score.rolling += count * weight * (max_e*3 - (e1+e2+e3)) * 0.5
-
-				else:
-					weight = 1.0 if row_delta_sum == 0 else 1.5
-					if has_gap: weight += 0.5
-					self.score.redirect += count * weight * (e1+e2+e3)
+		self.score.sfb = sfb
+		self.score.rolling = rolling
+		self.score.scissors = scissors
+		self.score.redirect = redirect
 
 	def calc_total_score(self):
 		def norm(v, m, d):
@@ -195,6 +157,8 @@ TRIGRAMS = Counter()
 SYMBOLS = Counter()
 SYMBOL_BIGRAMS = Counter()
 
+ROWS = 3
+COLS = 10
 EFFORT_GRID = [
 	[3.2, 2.4, 2.0, 2.2, 9.0, 9.0, 3.2, 3.0, 3.4, 4.2],
 	[1.5, 1.3, 1.1, 1.0, 3.5, 4.5, 2.0, 2.1, 2.3, 2.5],
@@ -208,24 +172,27 @@ FINGER_GRID = [
 ]
 
 SCORE_RATES = Score(
-	effort = 0.35,
-	sfb = 0.35,
-	scissors = 0.15,
-	redirect = 0.10,
-	rolling = 0.05,
+	sfb = 0.30,
+	rolling = 0.30,
+	effort = 0.20,
+	redirect = 0.15,
+	scissors = 0.05,
 )
 SCORE_MEDIAN = None
 SCORE_SCALE = None
 
+BIGRAM_SCORE_TABLE = None
+TRIGRAM_SCORE_TABLE = None
+
 def layout_key(l):
 	return (
 		l.total,
-		l.left_usage,
-		-l.score.effort,
+		-abs(l.left_usage-l.right_usage),
 		-l.score.sfb,
-		-l.score.scissors,
-		-l.score.redirect,
 		l.score.rolling,
+		-l.score.effort,
+		-l.score.redirect,
+		-l.score.scissors,
 	)
 
 def best_layout(layouts: list[Layout]):
@@ -235,20 +202,21 @@ def sort_layouts(layouts: list[Layout]):
 	layouts.sort(key=layout_key, reverse=True)
 	return layouts
 
-def sort_unique_layouts(layouts: list[Layout], size):
+def sort_unique_layouts(layouts: list[Layout], size, right_limit = 0.3):
 	layouts = sort_layouts(list(set(layouts)))
 	result = []
 
 	for layout in layouts:
 		if len(result) == size:
 			break
-
+		total = layout.left_usage + layout.right_usage
+		if layout.right_usage > right_limit * total:
+			continue
 		a = flatten(layout.letters)
 		is_unique = True
 		for l in result:
-			b = flatten(l.letters)
-
-			if a == b or 20 < sum(1 for c1, c2 in zip(a, b) if c1 == c2):
+			if layout == l or \
+					20 < sum(1 for c1, c2 in zip(a, flatten(l.letters)) if c1 == c2):
 				is_unique = False
 				break
 
@@ -258,7 +226,90 @@ def sort_unique_layouts(layouts: list[Layout], size):
 	return result
 
 def init_score_state():
-	global SCORE_MEDIAN, SCORE_SCALE
+	global SCORE_MEDIAN, SCORE_SCALE, BIGRAM_SCORE_TABLE, TRIGRAM_SCORE_TABLE
+	_effort_grid = EFFORT_GRID
+	_finger_grid = FINGER_GRID
+	num_keys = ROWS*COLS
+	max_e = max(max(r) for r in _effort_grid)
+
+	BIGRAM_SCORE_TABLE = [[Score() for _ in range(num_keys)] for _ in range(num_keys)]
+	for i in range(num_keys):
+		for j in range(num_keys):
+			self = BIGRAM_SCORE_TABLE[i][j]
+			r1, c1 = divmod(i, COLS)
+			r2, c2 = divmod(j, COLS)
+			f1 = _finger_grid[r1][c1]
+			f2 = _finger_grid[r2][c2]
+			e1 = _effort_grid[r1][c1]
+			e2 = _effort_grid[r2][c2]
+			row_delta = abs(r1 - r2)
+			is_center = (4<=c1<=5 or 4<=c2<=5)
+			has_gap = abs(f1-f2) > 1
+			is_switching = (c1<=4 and 5<=c2)
+
+			if f1 == f2:
+				weight = 2.5 if is_center else 1.0
+				weight += (row_delta*0.5)
+				self.sfb = weight * (e1+e2)
+			else:
+				if row_delta == 2:
+					if not has_gap and is_center:
+						self.scissors = (e1+e2)
+				elif f2 < f1:
+					if is_switching:
+						weight = 0.5 if (row_delta == 0 and not has_gap) else 0.4
+					else:
+						weight = 1.0 if (row_delta == 0 and not has_gap) else 0.8
+					self.rolling = weight * (max_e*2 - (e1+e2))
+
+	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
+	for i in range(num_keys):
+		for j in range(num_keys):
+			for k in range(num_keys):
+				self = TRIGRAM_SCORE_TABLE[i][j][k]
+				r1, c1 = divmod(i, COLS)
+				r2, c2 = divmod(j, COLS)
+				r3, c3 = divmod(k, COLS)
+				f1 = _finger_grid[r1][c1]
+				f2 = _finger_grid[r2][c2]
+				f3 = _finger_grid[r3][c3]
+				e1 = _effort_grid[r1][c1]
+				e2 = _effort_grid[r2][c2]
+				e3 = _effort_grid[r3][c3]
+				is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
+
+				if f1 == f3 and f1 != f2:
+					row_delta = abs(r1 - r3)
+					weight = 1.0 if c1 == c3 else 2.5
+					weight += (row_delta*0.5)
+					self.sfb = weight * (e1+e3)
+				else:
+					is_inroll = (f3 < f2 < f1)
+					is_outroll = (f1 < f2 < f3)
+					row_delta1 = abs(r1 - r2)
+					row_delta2 = abs(r2 - r3)
+					row_delta_sum = row_delta1 + row_delta2
+					has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
+
+					if is_inroll or is_outroll:
+						if row_delta1 == 2 or row_delta2 == 2:
+							if row_delta1 == row_delta2:
+								self.scissors = (e1+e2+e3)
+						elif is_inroll:
+							if is_switching:
+								weight = 0.5 if (row_delta == 0 and not has_gap) else 0.4
+							else:
+								weight = 1.0 if (row_delta == 0 and not has_gap) else 0.8
+							self.rolling = weight * (max_e*3 - (e1+e2+e3))
+						else: # outroll
+							pass
+					else:
+						if is_switching:
+							weight = 0.4 if (row_delta == 0 and not has_gap) else 0.5
+						else:
+							weight = 0.8 if (row_delta == 0 and not has_gap) else 1.0
+						self.redirect += weight * (e1+e2+e3)
+
 	def iqr(v):
 		q = statistics.quantiles(v, n=4, method="inclusive")
 		return q[2] - q[0]
@@ -481,43 +532,14 @@ def analyze_target(result_path):
 		'https://github.com/ApolloTeam-dev/AROS',       # C/Assembly
 	]
 
-	extensions = [
-		'.c', '.h',
-		'.cpp', '.hpp', '.cc', '.hh',
-		'.ino',
-		'.cs',
-		'.java',
-		'.kt', '.kts',
-		'.scala',
-		'.groovy',
-		'.swift',
-		'.m', '.mm',
-		'.py',
-		'.rb',
-		'.js', '.jsx',
-		'.ts', '.tsx',
-		'.go',
-		'.rs',
-		'.zig',
-		'.hs',
-		'.ml', '.mli',
-		'.ex', '.exs',
-		'.erl',
-		'.sh', '.bash', '.zsh',
-		'.html', '.htm',
-		'.css', '.scss',
+	extensions = {
 		'.md', '.markdown',
-		'.json', '.yaml', '.yml', '.toml',
-		'.sql', '.proto', '.xml',
-		'.dockerfile', 'Dockerfile',
-		'.R', '.r',
-		'.jl',
-		'.php',
-		'.pl', '.pm',
-		'.lua',
-		'.asm', '.s', '.S',
-		'.v', '.sv', '.vhd', '.vhdl',
-	]
+		'.txt', '.text',
+		'.rst',
+		'.adoc', '.asciidoc',
+		'.org',
+		'.tex'
+	}
 
 	# Check
 	print('[Check Target]')
@@ -546,8 +568,8 @@ def analyze_target(result_path):
 	files = []
 	for root, dirs, fs in os.walk(TMP_PATH):
 		for file in fs:
-			_, ext = os.path.splitext(file)
-			if ext in extensions:
+			name, ext = os.path.splitext(file)
+			if ext.lower() in extensions or name.lower() == 'readme':
 				files.append(os.path.join(root, file))
 
 	# Calc LETTERS, BIGRAMS
@@ -630,9 +652,10 @@ def make_random(base_layout: Layout) -> Layout:
 
 	return layout
 
+def flatten(letters):
+	return [item for row in letters for item in row]
+
 def crossover(parents: list[Layout], blank=' '):
-	def flatten(letters):
-		return [item for row in letters for item in row]
 	def unflatten(flat, rows=3, cols=10):
 		return [flat[i*cols:(i+1)*cols] for i in range(rows)]
 
@@ -742,8 +765,11 @@ def optimize_swap(base_layout: Layout, temperature, max_temp, fix=0):
 
 	return Layout(letters, source=base_layout.source)
 
-def optimize_shuffle(base_layout: Layout, result_len, length=6):
-	letters = random.sample(list(LETTERS.keys()), length)
+def optimize_shuffle(base_layout: Layout, result_len, length=6, custom=""):
+	if custom:
+		letters = [l for l in custom]
+	else:
+		letters = random.sample(list(LETTERS.keys()), length)
 	layouts = [base_layout.clone()]
 	l = [row[:] for row in base_layout.letters]
 	positions = [(r, c) for r in range(3) for c in range(10) if base_layout.letters[r][c] in letters]
@@ -754,7 +780,10 @@ def optimize_shuffle(base_layout: Layout, result_len, length=6):
 			l[r][c] = ch
 		layouts.append(Layout(l, source=base_layout.source+"->shuffle"))
 
-	return sort_unique_layouts(layouts, result_len)
+	if custom:
+		return sort_layouts(layouts)[:result_len]
+	else:
+		return sort_unique_layouts(layouts, result_len)
 
 def optimize_sa(base_layout: Layout, result_len, max_iter=10000, initial_temp=50.0, cooling_rate=0.9985, max_unimproved=2000):
 	best = base_layout.clone()
@@ -790,6 +819,7 @@ def optimize_sa(base_layout: Layout, result_len, max_iter=10000, initial_temp=50
 	return sort_unique_layouts(result, result_len)
 
 def optimize(base_layouts: list[Layout], elites_len=10):
+	is_improved = False
 	max_generation = elites_len*10
 	max_population = elites_len*10
 	elites = [l.clone() for l in base_layouts[:elites_len]]
@@ -832,6 +862,7 @@ def optimize(base_layouts: list[Layout], elites_len=10):
 			elites = sort_unique_layouts(elites, elites_len)
 
 			if prev != elites[-1].total:
+				is_improved = True
 				print(f'\t improved', end='')
 
 				enhanced_elites = [optimize_detail(e, elites_len) for e in elites]
@@ -850,7 +881,7 @@ def optimize(base_layouts: list[Layout], elites_len=10):
 		elites.extend(e)
 	elites = sort_unique_layouts(elites, elites_len)
 	save_result(elites, result_path)
-	return elites
+	return elites, is_improved
 
 def optimize_worker(layout: Layout, progress, result_len):
 	sa_weight = 0.2 + 0.2 * progress   # 0.2 - 0.4
@@ -879,14 +910,14 @@ def optimize_worker(layout: Layout, progress, result_len):
 	else:
 		return [layout]
 
-def optimize_detail(layout: Layout, result_len):
+def optimize_detail(layout: Layout, result_len, length=8):
 	with ProcessPoolExecutor() as executor:
 		result = []
 		r = list(executor.map(
 			optimize_shuffle,
 			[layout] * multiprocessing.cpu_count(),
 			[result_len] * multiprocessing.cpu_count(),
-			[8] * multiprocessing.cpu_count()
+			[length] * multiprocessing.cpu_count()
 		))
 		for rr in r:
 			result.extend(rr)
@@ -929,8 +960,8 @@ if __name__ == '__main__':
 	multiprocessing.set_start_method("fork")
 	signal.signal(signal.SIGINT, cleanup)
 	try:
-		if len(sys.argv) != 2:
-			print(f"Usage: {sys.argv[0]} <result_path>")
+		if len(sys.argv) < 2:
+			print(f"Usage: {sys.argv[0]} <result_path> [custom_letters]")
 			sys.exit(1)
 
 		result_path = sys.argv[1]
@@ -945,7 +976,6 @@ if __name__ == '__main__':
 		else:
 			analyze_target(result_path)
 
-		# Optimize
 		init_score_state()
 		file_path = os.path.join(result_path, RESULT_FILENAME)
 		if os.path.exists(file_path):
@@ -953,12 +983,23 @@ if __name__ == '__main__':
 		else:
 			result = [make_initial_layout()]
 
-		print(f'[Optimize]')
-		result = optimize(result)
-		print(f'\r\033[K...Done')
-		for i, l in enumerate(result, 1):
-			print(f'[{i}]')
-			print_layout(l)
+		if len(sys.argv) == 3:
+			result = optimize_shuffle(result[0], 10, 10, sys.argv[2])
+			for i, l in enumerate(result, 1):
+				print(f'[{i}]')
+				print_layout(l)
+		else:
+			# Optimize
+			is_improved = True
+			r = 1
+			while is_improved:
+				print(f'[Optimize {r}]')
+				result, is_improved = optimize(result)
+				r += 1
+			print(f'\r\033[K...Done')
+			for i, l in enumerate(result, 1):
+				print(f'[{i}]')
+				print_layout(l)
 
 	except KeyboardInterrupt:
 		cleanup(None, None)
