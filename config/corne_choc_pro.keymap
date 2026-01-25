@@ -197,43 +197,6 @@
             layers = <0 1 2 3>;
         };
     };
-    behaviors {
-        tdq: tdq {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp Q>, <&kp LS(Q)>;
-        };
-        tdw: tdw {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp W>, <&kp LS(W)>;
-        };
-        tde: tde {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp E>, <&kp LS(E)>;
-        };
-        tdr: tdr {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp R>, <&kp LS(R)>;
-        };
-        tdt: tdt {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp T>, <&kp LS(T)>;
-        };
-        tdp: tdp {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp P>, <&kp LS(P)>;
-        };
-        tdo: tdo {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            bindings = <&kp O>, <&kp LS(O)>;
-        };
-    };
    keymap {
       compatible = "zmk,keymap";
       base1_layer {
@@ -257,8 +220,8 @@
       kor1_layer {
          display-name = "KOR1";
          bindings = <
-            &tdq  &tdw  &tde  &tdr  &none        &none &none &none &none &none &none &none
-            &kp A &kp S &kp D &kp F &tdt         &none &none &none &none &none &none &none
+            &kp Q &kp W &kp E &kp R &none        &none &none &none &none &none &none &none
+            &kp A &kp S &kp D &kp F &kp T        &none &none &none &none &none &none &none
             &kp Z &kp X &kp C &kp V &lang1 BASE1             &none &none &none &none &none
             &trans &sl KOR2 &trans &none &none &none
             >;
@@ -266,9 +229,9 @@
       kor2_layer {
          display-name = "KOR2";
          bindings = <
-            &tdp  &tdo  &kp M &kp L &none        &none &none &none &none &none &none &none
-            &kp N &kp K &kp J &kp H &kp G        &none &none &none &none &none &none &none
-            &kp B &kp I &kp U &kp Y &lang2 BASE1             &none &none &none &none &none
+            &kp P &kp O &kp M &kp L &none        &none &none &none &none &none &none &none
+            &kp N &kp H &kp J &kp K &kp G        &none &none &none &none &none &none &none
+            &kp B &kp Y &kp U &kp I &lang2 BASE1             &none &none &none &none &none
             &trans &to KOR1 &trans &none &none &none
             >;
       };
