@@ -29,7 +29,6 @@ class Score:
 	rolling: int = 0
 	scissors: int = 0
 	redirect: int = 0
-	switching: int = 0
 
 @dataclass(slots=True)
 class Layout:
@@ -55,7 +54,7 @@ class Layout:
 	def __eq__(self, other):
 		if not isinstance(other, Layout):
 			return False
-		return self.letters == other.letters or self.letters == other.letters[::-1]
+		return self.letters == other.letters
 
 	def __hash__(self):
 		return hash(tuple(tuple(r) for r in self.letters))
@@ -160,9 +159,9 @@ SYMBOL_BIGRAMS = Counter()
 ROWS = 3
 COLS = 10
 EFFORT_GRID = [
-	[3.2, 2.4, 2.0, 2.2, 9.0, 9.0, 3.2, 3.0, 3.4, 4.2],
-	[1.5, 1.3, 1.1, 1.0, 3.5, 4.5, 2.0, 2.1, 2.3, 2.5],
-	[3.0, 2.6, 2.3, 1.6, 9.0, 9.0, 2.6, 3.3, 3.6, 4.0],
+	[3.2, 2.4, 2.0, 2.2, 20.0, 20.0, 5.2, 5.0, 5.4, 6.2],
+	[1.5, 1.3, 1.1, 1.0,  3.5,  6.5, 4.0, 4.1, 4.3, 4.5],
+	[3.0, 2.6, 2.3, 1.6, 20.0, 20.0, 4.6, 5.3, 5.6, 6.0],
 ]
 
 FINGER_GRID = [
@@ -187,7 +186,7 @@ TRIGRAM_SCORE_TABLE = None
 def layout_key(l):
 	return (
 		l.total,
-		-abs(l.left_usage-l.right_usage),
+		l.left_usage,
 		-l.score.sfb,
 		l.score.rolling,
 		-l.score.effort,
@@ -202,16 +201,13 @@ def sort_layouts(layouts: list[Layout]):
 	layouts.sort(key=layout_key, reverse=True)
 	return layouts
 
-def sort_unique_layouts(layouts: list[Layout], size, right_limit = 0.3):
+def sort_unique_layouts(layouts: list[Layout], size):
 	layouts = sort_layouts(list(set(layouts)))
 	result = []
 
 	for layout in layouts:
 		if len(result) == size:
 			break
-		total = layout.left_usage + layout.right_usage
-		if layout.right_usage > right_limit * total:
-			continue
 		a = flatten(layout.letters)
 		is_unique = True
 		for l in result:
@@ -244,23 +240,25 @@ def init_score_state():
 			e2 = _effort_grid[r2][c2]
 			row_delta = abs(r1 - r2)
 			is_center = (4<=c1<=5 or 4<=c2<=5)
-			has_gap = abs(f1-f2) > 1
-			is_switching = (c1<=4 and 5<=c2)
 
 			if f1 == f2:
 				weight = 2.5 if is_center else 1.0
 				weight += (row_delta*0.5)
 				self.sfb = weight * (e1+e2)
 			else:
-				if row_delta == 2:
-					if not has_gap and is_center:
-						self.scissors = (e1+e2)
-				elif f2 < f1:
-					if is_switching:
-						weight = 0.5 if (row_delta == 0 and not has_gap) else 0.4
-					else:
-						weight = 1.0 if (row_delta == 0 and not has_gap) else 0.8
+				has_gap = abs(f1-f2) > 1
+				is_switching = (c1<=4 and 5<=c2)
+
+				if is_center or (not has_gap and row_delta == 2) :
+					self.scissors = (e1+e2)
+				elif f2 < f1: # inroll
+					weight = 0.5 if is_switching else 1.0
+					weight *= 0.8 if (has_gap or row_delta != 0) else 1.0
 					self.rolling = weight * (max_e*2 - (e1+e2))
+				elif f2 > f1: # outroll
+					weight = 0.5 if is_switching else 0.25
+					weight *= 0.8 if (has_gap or row_delta != 0) else 1.0
+					self.rolling -= weight * (e1+e2)
 
 	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
 	for i in range(num_keys):
@@ -276,39 +274,35 @@ def init_score_state():
 				e1 = _effort_grid[r1][c1]
 				e2 = _effort_grid[r2][c2]
 				e3 = _effort_grid[r3][c3]
-				is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
+				is_center = (4<=c1<=5 or 4<=c2<=5 or 4<=c3<=5)
 
 				if f1 == f3 and f1 != f2:
 					row_delta = abs(r1 - r3)
-					weight = 1.0 if c1 == c3 else 2.5
+					weight = 2.5 if is_center else 1.0
 					weight += (row_delta*0.5)
 					self.sfb = weight * (e1+e3)
 				else:
-					is_inroll = (f3 < f2 < f1)
-					is_outroll = (f1 < f2 < f3)
 					row_delta1 = abs(r1 - r2)
 					row_delta2 = abs(r2 - r3)
 					row_delta_sum = row_delta1 + row_delta2
 					has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
+					is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
 
-					if is_inroll or is_outroll:
-						if row_delta1 == 2 or row_delta2 == 2:
-							if row_delta1 == row_delta2:
-								self.scissors = (e1+e2+e3)
-						elif is_inroll:
-							if is_switching:
-								weight = 0.5 if (row_delta == 0 and not has_gap) else 0.4
-							else:
-								weight = 1.0 if (row_delta == 0 and not has_gap) else 0.8
-							self.rolling = weight * (max_e*3 - (e1+e2+e3))
-						else: # outroll
-							pass
+					if (not has_gap and row_delta1 == 2 and row_delta2 == 2) or \
+							(is_center and (row_delta1 == 2 or row_delta2 == 2)):
+						self.scissors = (e1+e2+e3)
+					elif not is_center and (f3 < f2 < f1): # inroll
+						weight = 0.5 if is_switching else 1.0
+						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
+						self.rolling = weight * (max_e*3 - (e1+e2+e3))
+					elif not is_center and (f3 > f2 > f1): # outroll
+						weight = 0.5 if is_switching else 0.25
+						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
+						self.rolling -= weight * (e1+e2+e3)
 					else:
-						if is_switching:
-							weight = 0.4 if (row_delta == 0 and not has_gap) else 0.5
-						else:
-							weight = 0.8 if (row_delta == 0 and not has_gap) else 1.0
-						self.redirect += weight * (e1+e2+e3)
+						weight = 0.5 if is_switching else 1.0
+						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
+						self.redirect = weight * (e1+e2+e3)
 
 	def iqr(v):
 		q = statistics.quantiles(v, n=4, method="inclusive")
@@ -533,12 +527,46 @@ def analyze_target(result_path):
 	]
 
 	extensions = {
+		'.c', '.h',
+		'.cpp', '.hpp', '.cc', '.hh',
+		'.ino',
+		'.cs',
+		'.java',
+		'.kt', '.kts',
+		'.scala',
+		'.groovy',
+		'.swift',
+		'.m', '.mm',
+		'.py',
+		'.rb',
+		'.js', '.jsx',
+		'.ts', '.tsx',
+		'.go',
+		'.rs',
+		'.zig',
+		'.hs',
+		'.ml', '.mli',
+		'.ex', '.exs',
+		'.erl',
+		'.sh', '.bash', '.zsh',
+		'.html', '.htm',
+		'.css', '.scss',
+		'.json', '.yaml', '.yml', '.toml',
+		'.sql', '.proto', '.xml',
+		'.dockerfile', 'Dockerfile',
+		'.R', '.r',
+		'.jl',
+		'.php',
+		'.pl', '.pm',
+		'.lua',
+		'.asm', '.s', '.S',
+		'.v', '.sv', '.vhd', '.vhdl',
 		'.md', '.markdown',
 		'.txt', '.text',
 		'.rst',
 		'.adoc', '.asciidoc',
 		'.org',
-		'.tex'
+		'.tex',
 	}
 
 	# Check
@@ -664,15 +692,23 @@ def crossover(parents: list[Layout], blank=' '):
 	length = len(parent1)
 
 	a, b = sorted(random.sample(range(length), 2))
-	child = [blank if k == blank else None for k in parent1]
+	child = [None] * length
 	child[a:b] = parent1[a:b]
 
-	used = {k for k in child if k is not None}
-	remain_keys = [k for k in parent2 if k not in used]
-	it = iter(remain_keys)
+	for i in range(a, b):
+		if parent2[i] not in parent1[a:b]:
+			c = parent2[i]
+			t = parent1[i]
+			while t in parent2[a:b]:
+				t = parent1[parent2.index(t)]
+			if c not in child:
+				j = parent2.index(t)
+				if child[j] is None:
+					child[j] = c
+
 	for i in range(length):
 		if child[i] is None:
-			child[i] = next(it)
+			child[i] = parent2[i]
 
 	return Layout(unflatten(child), source=parents[0].source+"->crossover")
 
@@ -781,39 +817,42 @@ def optimize_shuffle(base_layout: Layout, result_len, length=6, custom=""):
 		layouts.append(Layout(l, source=base_layout.source+"->shuffle"))
 
 	if custom:
-		return sort_layouts(layouts)[:result_len]
+		return sort_layouts(list(set(layouts)))[:result_len]
 	else:
 		return sort_unique_layouts(layouts, result_len)
 
-def optimize_sa(base_layout: Layout, result_len, max_iter=10000, initial_temp=50.0, cooling_rate=0.9985, max_unimproved=2000):
+def optimize_sa(base_layout: Layout, result_len, max_iter=10000, cooling_rate=0.9985, max_unimproved=2000):
 	best = base_layout.clone()
 	cur = base_layout.clone()
+	initial_temp = max(abs(base_layout.total) * 0.005, 50)
+	stop_temp = initial_temp * 1e-5
 	temperature = initial_temp
 	unimproved = 0
 	result = [best.clone()]
 
 	for i in range(max_iter):
 		new_layout = optimize_swap(cur, temperature, initial_temp)
-
 		diff = new_layout.total - cur.total
-		T = max(temperature, 1e-6)
-		try:
-			prob = math.exp(diff / T)
-		except (OverflowError, ZeroDivisionError, TypeError):
-			prob = 1.0
 
-		unimproved += 1
-		if diff >= 0 or prob > random.random():
+		if diff >= 0:
+			accept = True
+		else:
+			T = max(temperature, 1e-9)
+			prob = math.exp(diff / T)
+			accept = prob > random.random()
+
+		if accept:
 			cur = new_layout
 			if cur.total > best.total:
 				best = cur.clone()
-				best.source += "->sa"
+				best.source += f"->sa_{i}"
 				result.append(best.clone())
 				temperature *= 1.05
 				unimproved = 0
+		unimproved += 1
 		temperature *= cooling_rate
 
-		if unimproved > max_unimproved or temperature < 1e-3:
+		if unimproved > max_unimproved or temperature < stop_temp:
 			break
 
 	return sort_unique_layouts(result, result_len)
@@ -961,7 +1000,7 @@ if __name__ == '__main__':
 	signal.signal(signal.SIGINT, cleanup)
 	try:
 		if len(sys.argv) < 2:
-			print(f"Usage: {sys.argv[0]} <result_path> [custom_letters]")
+			print(f"Usage: {sys.argv[0]} <result_path> [custom_index] [custom_letters]")
 			sys.exit(1)
 
 		result_path = sys.argv[1]
@@ -983,8 +1022,14 @@ if __name__ == '__main__':
 		else:
 			result = [make_initial_layout()]
 
-		if len(sys.argv) == 3:
-			result = optimize_shuffle(result[0], 10, 10, sys.argv[2])
+		if len(sys.argv) >= 3:
+			if len(sys.argv) == 3:
+				index = 0
+				letters = sys.argv[2]
+			else:
+				index = sys.argv[2]
+				letters = sys.artv[3]
+			result = optimize_shuffle(result[index], len(letters), len(letters), letters)
 			for i, l in enumerate(result, 1):
 				print(f'[{i}]')
 				print_layout(l)
