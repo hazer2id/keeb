@@ -146,8 +146,13 @@
             bindings = <&kp SPACE>;
             layers = <0 1 2 3 6>;
         };
-        combo_tab {
+        combo_ret {
             key-positions = <14 15>;
+            bindings = <&kp RET>;
+            layers = <0 1 2 3>;
+        };
+        combo_tab {
+            key-positions = <13 15>;
             bindings = <&kp TAB>;
             layers = <0 1 2 3>;
         };
@@ -156,9 +161,14 @@
             bindings = <&kp ESC>;
             layers = <0 1 2 3>;
         };
-        combo_ret {
+        combo_lshft {
             key-positions = <26 27>;
-            bindings = <&kp RET>;
+            bindings = <&sk LSHFT>;
+            layers = <0 1 2 3>;
+        };
+        combo_cw {
+            key-positions = <25 27>;
+            bindings = <&caps_word>;
             layers = <0 1 2 3>;
         };
         combo_bspc {
@@ -169,16 +179,6 @@
         combo_del {
             key-positions = <2 3>;
             bindings = <&kp DEL>;
-            layers = <0 1 2 3>;
-        };
-        combo_lshft {
-            key-positions = <12 15>;
-            bindings = <&sk LSHFT>;
-            layers = <0 1 2 3>;
-        };
-        combo_cw {
-            key-positions = <24 27>;
-            bindings = <&caps_word>;
             layers = <0 1 2 3>;
         };
         combo_lcmd {
