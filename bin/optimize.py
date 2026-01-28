@@ -54,7 +54,7 @@ class Layout:
 	def __eq__(self, other):
 		if not isinstance(other, Layout):
 			return False
-		return self.letters == other.letters
+		return self.letters == other.letters or self.letters[::-1] == other.letters
 
 	def __hash__(self):
 		return hash(tuple(tuple(r) for r in self.letters))
@@ -159,15 +159,15 @@ SYMBOL_BIGRAMS = Counter()
 ROWS = 3
 COLS = 10
 EFFORT_GRID = [
-	[3.2, 2.4, 2.0, 2.2, 20.0, 20.0, 5.2, 5.0, 5.4, 6.2],
-	[1.5, 1.3, 1.1, 1.0,  3.5,  6.5, 4.0, 4.1, 4.3, 4.5],
-	[3.0, 2.6, 2.3, 1.6, 20.0, 20.0, 4.6, 5.3, 5.6, 6.0],
+	[3.2, 2.4, 2.0, 2.2, 10.0, 10.0, 2.2, 2.0, 2.4, 3.2],
+	[1.5, 1.3, 1.1, 1.0,  4.5,  4.5, 1.0, 1.1, 1.3, 1.5],
+	[3.0, 2.6, 2.3, 1.6, 10.0, 10.0, 1.6, 2.3, 2.6, 3.0],
 ]
 
 FINGER_GRID = [
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
+	[4, 3, 2, 1, 1, 5, 5, 6, 7, 8],
+	[4, 3, 2, 1, 1, 5, 5, 6, 7, 8],
+	[4, 3, 2, 1, 1, 5, 5, 6, 7, 8],
 ]
 
 SCORE_RATES = Score(
@@ -186,7 +186,7 @@ TRIGRAM_SCORE_TABLE = None
 def layout_key(l):
 	return (
 		l.total,
-		l.left_usage,
+		-abs(l.left_usage-l.right_usage),
 		-l.score.sfb,
 		l.score.rolling,
 		-l.score.effort,
@@ -234,31 +234,29 @@ def init_score_state():
 			self = BIGRAM_SCORE_TABLE[i][j]
 			r1, c1 = divmod(i, COLS)
 			r2, c2 = divmod(j, COLS)
-			f1 = _finger_grid[r1][c1]
-			f2 = _finger_grid[r2][c2]
-			e1 = _effort_grid[r1][c1]
-			e2 = _effort_grid[r2][c2]
-			row_delta = abs(r1 - r2)
-			is_center = (4<=c1<=5 or 4<=c2<=5)
+			half = COLS/2
+			if (c1<half and c2<half) or (half<=c1 and half<=c2):
+				f1 = _finger_grid[r1][c1]
+				f2 = _finger_grid[r2][c2]
+				e1 = _effort_grid[r1][c1]
+				e2 = _effort_grid[r2][c2]
+				row_delta = abs(r1 - r2)
+				is_center = (4<=c1<=5 or 4<=c2<=5)
 
-			if f1 == f2:
-				weight = 2.5 if is_center else 1.0
-				weight += (row_delta*0.5)
-				self.sfb = weight * (e1+e2)
-			else:
-				has_gap = abs(f1-f2) > 1
-				is_switching = (c1<=4 and 5<=c2)
+				if f1 == f2:
+					weight = 2.5 if is_center else 1.0
+					weight += (row_delta*0.5)
+					self.sfb = weight * (e1+e2)
+				else:
+					has_gap = abs(f1-f2) > 1
 
-				if is_center or (not has_gap and row_delta == 2) :
-					self.scissors = (e1+e2)
-				elif f2 < f1: # inroll
-					weight = 0.5 if is_switching else 1.0
-					weight *= 0.8 if (has_gap or row_delta != 0) else 1.0
-					self.rolling = weight * (max_e*2 - (e1+e2))
-				elif f2 > f1: # outroll
-					weight = 0.5 if is_switching else 0.25
-					weight *= 0.8 if (has_gap or row_delta != 0) else 1.0
-					self.rolling -= weight * (e1+e2)
+					weight = 0.8 if (has_gap or row_delta != 0) else 1.0
+					if is_center or (not has_gap and row_delta == 2) :
+						self.scissors = (e1+e2)
+					elif f2 < f1: # inroll
+						self.rolling = weight * (max_e*2 - (e1+e2))
+					elif f2 > f1: # outroll
+						self.rolling -= weight * (e1+e2)
 
 	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
 	for i in range(num_keys):
@@ -268,41 +266,37 @@ def init_score_state():
 				r1, c1 = divmod(i, COLS)
 				r2, c2 = divmod(j, COLS)
 				r3, c3 = divmod(k, COLS)
-				f1 = _finger_grid[r1][c1]
-				f2 = _finger_grid[r2][c2]
-				f3 = _finger_grid[r3][c3]
-				e1 = _effort_grid[r1][c1]
-				e2 = _effort_grid[r2][c2]
-				e3 = _effort_grid[r3][c3]
-				is_center = (4<=c1<=5 or 4<=c2<=5 or 4<=c3<=5)
+				half = COLS/2
+				if (c1<half and c2<half and c3<half) or (half<=c1 and half<=c2 and half<=c3):
+					f1 = _finger_grid[r1][c1]
+					f2 = _finger_grid[r2][c2]
+					f3 = _finger_grid[r3][c3]
+					e1 = _effort_grid[r1][c1]
+					e2 = _effort_grid[r2][c2]
+					e3 = _effort_grid[r3][c3]
+					is_center = (4<=c1<=5 or 4<=c2<=5 or 4<=c3<=5)
 
-				if f1 == f3 and f1 != f2:
-					row_delta = abs(r1 - r3)
-					weight = 2.5 if is_center else 1.0
-					weight += (row_delta*0.5)
-					self.sfb = weight * (e1+e3)
-				else:
-					row_delta1 = abs(r1 - r2)
-					row_delta2 = abs(r2 - r3)
-					row_delta_sum = row_delta1 + row_delta2
-					has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
-					is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
-
-					if (not has_gap and row_delta1 == 2 and row_delta2 == 2) or \
-							(is_center and (row_delta1 == 2 or row_delta2 == 2)):
-						self.scissors = (e1+e2+e3)
-					elif not is_center and (f3 < f2 < f1): # inroll
-						weight = 0.5 if is_switching else 1.0
-						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
-						self.rolling = weight * (max_e*3 - (e1+e2+e3))
-					elif not is_center and (f3 > f2 > f1): # outroll
-						weight = 0.5 if is_switching else 0.25
-						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
-						self.rolling -= weight * (e1+e2+e3)
+					if f1 == f3 and f1 != f2:
+						row_delta = abs(r1 - r3)
+						weight = 2.5 if is_center else 1.0
+						weight += (row_delta*0.5)
+						self.sfb = weight * (e1+e3)
 					else:
-						weight = 0.5 if is_switching else 1.0
-						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
-						self.redirect = weight * (e1+e2+e3)
+						row_delta1 = abs(r1 - r2)
+						row_delta2 = abs(r2 - r3)
+						row_delta_sum = row_delta1 + row_delta2
+						has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
+
+						weight = 0.8 if (has_gap or row_delta_sum != 0) else 1.0
+						if (not has_gap and row_delta1 == 2 and row_delta2 == 2) or \
+								(is_center and (row_delta1 == 2 or row_delta2 == 2)):
+							self.scissors = (e1+e2+e3)
+						elif not is_center and (f3 < f2 < f1): # inroll
+							self.rolling = weight * (max_e*3 - (e1+e2+e3))
+						elif not is_center and (f3 > f2 > f1): # outroll
+							self.rolling -= weight * (e1+e2+e3)
+						else:
+							self.redirect = weight * (e1+e2+e3)
 
 	def iqr(v):
 		q = statistics.quantiles(v, n=4, method="inclusive")
@@ -655,13 +649,13 @@ def analyze_target(result_path):
 def make_initial_layout() -> Layout:
 	grid = [] 
 	coords = []
-	for r in range(3):
-		for c in range(10):
+	for r in range(ROWS):
+		for c in range(COLS):
 			coords.append((EFFORT_GRID[r][c], r, c))
 	coords.sort()
 
 	letters_sorted = [ch for ch, _ in LETTERS.most_common()]
-	layout = [[' ' for _ in range(10)] for _ in range(3)]
+	layout = [[' ' for _ in range(COLS)] for _ in range(ROWS)]
 	for i, (_, r, c) in enumerate(coords):
 		if i < len(letters_sorted):
 			layout[r][c] = letters_sorted[i]
@@ -684,7 +678,7 @@ def flatten(letters):
 	return [item for row in letters for item in row]
 
 def crossover(parents: list[Layout], blank=' '):
-	def unflatten(flat, rows=3, cols=10):
+	def unflatten(flat, rows=ROWS, cols=COLS):
 		return [flat[i*cols:(i+1)*cols] for i in range(rows)]
 
 	parent1 = flatten(parents[0].letters)
@@ -747,14 +741,14 @@ def optimize_effort(base_layout: Layout, result_len):
 		elif order == 'effort_desc':
 			effort_levels.sort(reverse=True)
 		else:
-			effort_counts = {val: sum(1 for r in range(3) for c in range(10) if EFFORT_GRID[r][c] == val) for val in effort_levels}
+			effort_counts = {val: sum(1 for r in range(ROWS) for c in range(COLS) if EFFORT_GRID[r][c] == val) for val in effort_levels}
 			if order == 'count_asc':
 				effort_levels.sort(key=lambda x: effort_counts[x])
 			elif order == 'count_desc':
 				effort_levels.sort(key=lambda x: -effort_counts[x])
 
 		for effort_level in effort_levels:
-			group_coords = [(r, c) for r in range(3) for c in range(10) if abs(EFFORT_GRID[r][c] - effort_level) <= 0.1]
+			group_coords = [(r, c) for r in range(ROWS) for c in range(COLS) if abs(EFFORT_GRID[r][c] - effort_level) <= 0.1]
 			random.shuffle(group_coords)
 
 			for i in range(len(group_coords)):
@@ -808,7 +802,7 @@ def optimize_shuffle(base_layout: Layout, result_len, length=6, custom=""):
 		letters = random.sample(list(LETTERS.keys()), length)
 	layouts = [base_layout.clone()]
 	l = [row[:] for row in base_layout.letters]
-	positions = [(r, c) for r in range(3) for c in range(10) if base_layout.letters[r][c] in letters]
+	positions = [(r, c) for r in range(ROWS) for c in range(COLS) if base_layout.letters[r][c] in letters]
 	perms = permutations(letters, len(letters))
 
 	for perm in perms:
