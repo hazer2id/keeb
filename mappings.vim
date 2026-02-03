@@ -20,37 +20,33 @@ noremap D B
 noremap n w
 noremap N W
 " Mode
-noremap p o
+noremap h o
 noremap a O
-noremap A r
-noremap P R
-noremap m i
-noremap M I
+noremap H r
+noremap A R
+noremap c i
+noremap C I
 noremap s a
 noremap S A
-noremap l v
-noremap L V
-noremap <C-l> <C-v>
 " Operation
-noremap h c
-noremap H C
+noremap u c
+noremap U C
 noremap o d
 noremap O D
-noremap c y
-noremap C Y
-noremap v p
-noremap V P
 " Etc
-noremap q :write<CR>
+noremap m @
+noremap M q
+noremap w :write<CR>
 noremap f za
 noremap F zR
 noremap k n
 noremap K N
 noremap j :join!<CR>
 noremap J :.-1join!<CR>
-noremap y "
-noremap Y :registers<CR>
-noremap U <C-r>
+noremap l "
+noremap L :registers<CR>
+noremap z u
+noremap Z <C-r>
 noremap b g;
 noremap B g,
 noremap <Space> o<Esc>
@@ -71,10 +67,10 @@ call Mapmap('<Leader><Down>',  '<C-w>j')
 call Mapmap('<PageUp>',        '<C-b>')
 call Mapmap('<PageDown>',      '<C-f>')
 " Window
-call Mapmap('<Leader>q', ':wqall<CR>')
+call Mapmap('<Leader>z', ':wqall<CR>')
 call Mapmap('<Leader>C', '<C-w>c')
-call Mapmap('<Leader>Z', ':vsplit<CR>')
-call Mapmap('<Leader>z', ':split<CR>')
+call Mapmap('<Leader>s', ':split<CR>')
+call Mapmap('<Leader>S', ':vsplit<CR>')
 " Buffer
 call Mapmap('<Leader>c', ':call CloseBuf()<CR>')
 call Mapmap('<Leader>i', ':bprevious<CR>')
@@ -88,12 +84,12 @@ call Mapmap('<Leader>=', '<C-w>=')
 call Mapmap('<Leader>_', '<C-w>_')
 call Mapmap('<Leader>\|', '<C-w>\|')
 " List
-call Mapmap('<Leader>h', ':call ToggleList("l")<CR>')
+call Mapmap('<Leader>u', ':call ToggleList("l")<CR>')
 call Mapmap('<Leader>o', ':call ToggleList("c")<CR>')
 call Mapmap('<Leader>a', ':call CycleList("c","n")<CR>')
 call Mapmap('<Leader>A', ':call CycleList("c","p")<CR>')
-call Mapmap('<Leader>p', ':call CycleList("l","n")<CR>')
-call Mapmap('<Leader>P', ':call CycleList("l","p")<CR>')
+call Mapmap('<Leader>h', ':call CycleList("l","n")<CR>')
+call Mapmap('<Leader>H', ':call CycleList("l","p")<CR>')
 " YCM
 call Mapmap('<Leader>t', ':YcmCompleter GoToAlternateFile<CR>')
 call Mapmap('<Leader>G', ':YcmCompleter GoToReferences<CR>:call AfterYcm()<CR>')
@@ -114,5 +110,5 @@ let g:tagbar_map_jump = "t"
 " Etc
 call Mapmap('<Leader>b', '<C-o>')
 call Mapmap('<Leader>B', '<C-i>')
-call Mapmap('<Leader>k', ':noh<CR>')
-call Mapmap('<Leader>K', '<Plug>(YCMHover)')
+call Mapmap('<Leader>m', ':noh<CR>')
+call Mapmap('<Leader>M', '<Plug>(YCMHover)')
