@@ -202,18 +202,18 @@
       base1_layer {
          display-name = "BASE1";
          bindings = <
-            &kp M &kp P &kp A &kp S &none       &none &none &none &none &none &none &none
-            &kp T &kp I &kp E &kp R &kp Q       &none &none &none &none &none &none &none
-            &kp D &kp H &kp O &kp N &lang1 KOR1             &none &none &none &none &none
+            &kp C &kp H &kp A &kp S &none       &none &none &none &none &none &none &none
+            &kp T &kp I &kp E &kp R &kp Z       &none &none &none &none &none &none &none
+            &kp D &kp U &kp O &kp N &lang1 KOR1             &none &none &none &none &none
             &sl ARROWS &sl BASE2 &sl SYM1 &none &none &none
             >;
       };
       base2_layer {
          display-name = "BASE2";
          bindings = <
-            &kp G &kp W &kp Y &kp B &none       &none &none &none &none &none &none &none
-            &kp C &kp L &kp U &kp V &kp J       &none &none &none &none &none &none &none
-            &kp F &kp K &kp Z &kp X &lang2 KOR1             &none &none &none &none &none
+            &kp W &kp V &kp Y &kp K &none       &none &none &none &none &none &none &none
+            &kp M &kp P &kp G &kp L &kp J       &none &none &none &none &none &none &none
+            &kp F &kp B &kp Q &kp X &lang2 KOR1             &none &none &none &none &none
             &trans &to BASE1 &trans &none &none &none
             >;
       };

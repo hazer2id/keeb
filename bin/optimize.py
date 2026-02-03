@@ -153,8 +153,6 @@ RESULT_FILENAME = 'result.txt'
 LETTERS = Counter()
 BIGRAMS = Counter()
 TRIGRAMS = Counter()
-SYMBOLS = Counter()
-SYMBOL_BIGRAMS = Counter()
 
 ROWS = 3
 COLS = 10
@@ -182,6 +180,87 @@ SCORE_SCALE = None
 
 BIGRAM_SCORE_TABLE = None
 TRIGRAM_SCORE_TABLE = None
+
+EXT_TEXT = {
+	'.md', '.markdown',
+	'.txt', '.text',
+	'.rst',
+	'.adoc', '.asciidoc', '.asc',
+	'.org',
+	'.tex',
+	'.LICENSE', 'LICENSE',
+	'readme', 'README',
+	'.html', '.htm',
+	'.json',
+	'.fxml', '.xml', '.svg', '.vue',
+}
+
+EXT_C_STYLE = {
+	'.c', '.h',
+	'.cpp', '.hpp', '.cc', '.hh',
+	'.cxx', '.hxx',
+	'.dts', '.dtsi',
+	'.ino',
+	'.cs',
+	'.java',
+	'.kt', '.kts',
+	'.scala',
+	'.go',
+	'.rs',
+	'.zig',
+	'.js', '.jsx', '.mjs',
+	'.ts', '.tsx',
+	'.swift',
+	'.m', '.mm',
+	'.php',
+	'.groovy',
+	'.gradle',
+	'.css', '.scss', '.less',
+	'.v', '.sv',
+	'.dart', '.sol', '.proto',
+}
+
+EXT_SCRIPT_STYLE = {
+	'.py',
+	'.rb',
+	'.sh', '.bash', '.zsh', '.fish',
+	'.conf', '.ini', '.cfg',
+	'.gitconfig', '.gitignore',
+	'.pl', '.pm',
+	'.R', '.r',
+	'.jl',
+	'.ex', '.exs',
+	'.yaml', '.yml', '.toml',
+	'.dockerfile', 'Dockerfile',
+	'Makefile', '.mk', '.make',
+	'.cmake',
+}
+
+EXT_DASH_STYLE = {
+	'.sql',
+	'.lua',
+	'.hs', '.lhs',
+	'.vhd', '.vhdl',
+	'.elm',
+	'.ada', '.adb', '.ads',
+}
+
+EXT_PERCENT_STYLE = {
+	'.erl', '.hrl', 
+}
+
+EXT_SEMI_STYLE = {
+	'.asm', '.s', '.S',
+	'.clj', '.cljs', '.cljc', '.edn',
+	'.lisp', '.lsp', '.scm',
+	'.ini',
+}
+
+EXT_PAREN_STAR_STYLE = {
+	'.ml', '.mli',
+	'.fs', '.fsi', '.fsx',
+	'.pas', '.pp',
+}
 
 def layout_key(l):
 	return (
@@ -227,6 +306,7 @@ def init_score_state():
 	_finger_grid = FINGER_GRID
 	num_keys = ROWS*COLS
 	max_e = max(max(r) for r in _effort_grid)
+	half = COLS/2
 
 	BIGRAM_SCORE_TABLE = [[Score() for _ in range(num_keys)] for _ in range(num_keys)]
 	for i in range(num_keys):
@@ -301,7 +381,7 @@ def init_score_state():
 						self.rolling -= weight * (e1+e2+e3)
 					else:
 						weight = 0.5 if is_switching else 1.0
-						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
+						weight *= 0.8 if (row_delta_sum != 0) else 1.0
 						self.redirect = weight * (e1+e2+e3)
 
 	def iqr(v):
@@ -389,16 +469,8 @@ def save_analyze_result(result_path):
 		for tg, count in TRIGRAMS.most_common():
 			f.write(f'{tg}\t{count}\n')
 
-		f.write('\nsymbol\tfrequency\n')
-		for ch, count in SYMBOLS.most_common():
-			f.write(f'{ch}\t{count}\n')
-
-		f.write('\nsymbigram\tfrequency\n')
-		for bg, count in SYMBOL_BIGRAMS.most_common():
-			f.write(f'{bg}\t{count}\n')
-
 def load_analysis_result(result_path):
-	global LETTERS, BIGRAMS, TRIGRAMS, SYMBOLS, SYMBOL_BIGRAMS
+	global LETTERS, BIGRAMS, TRIGRAMS 
 
 	file_path = os.path.join(result_path, ANALYZE_RESULT_FILENAME)
 
@@ -417,12 +489,6 @@ def load_analysis_result(result_path):
 			elif line.startswith('trigram\t'):
 				section = 'trigrams'
 				continue
-			elif line.startswith('symbol\t'):
-				section = 'symbols'
-				continue
-			elif line.startswith('symbigram\t'):
-				section = 'symbigrams'
-				continue
 
 			if section == 'letters':
 				ch, count = line.split('\t')
@@ -433,24 +499,17 @@ def load_analysis_result(result_path):
 			elif section == 'trigrams':
 				tg, count = line.split('\t')
 				TRIGRAMS[tg] = int(count)
-			elif section == 'symbols':
-				ch, count = line.split('\t')
-				SYMBOLS[ch] = int(count)
-			elif section == 'symbigrams':
-				bg, count = line.split('\t')
-				SYMBOL_BIGRAMS[bg] = int(count)
 
 def analyze_target_single(full_path):
 	letters = Counter()
 	bigrams = Counter()
 	trigrams = Counter()
-	symbols = Counter()
-	symbol_bigrams = Counter()
 	pattern = re.compile('[a-z]+', re.IGNORECASE)
-	symbol_set = set('~`!@#$%^&*()-_=+[]{}\\|;:\'",.<>/?')
 	try:
 		with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-			text = f.read()
+			text = get_text_content(full_path, f.read())
+			if not text.strip():
+				pass
 			groups = pattern.findall(text)
 			for g in groups:
 				word = g.lower()
@@ -462,19 +521,13 @@ def analyze_target_single(full_path):
 						bigrams[word[i] + word[i+1]] += 1
 				for i in range(len(word)-2):
 					trigrams[word[i] + word[i+1] + word[i+2]] += 1
-			for ch in text:
-				if ch in symbol_set:
-					symbols[ch] += 1
-			for i in range(len(text) - 1):
-				if text[i] in symbol_set and text[i + 1] in symbol_set and text[i] != text[i + 1]:
-					symbol_bigrams[text[i] + text[i + 1]] += 1
 	except (FileNotFoundError, PermissionError, IsADirectoryError) as e:
 		print(f'Failed: {full_path} — {e}')
 
-	return letters, bigrams, trigrams, symbols, symbol_bigrams
+	return letters, bigrams, trigrams
 
 def analyze_target(result_path):
-	global LETTERS, BIGRAMS, TRIGRAMS, SYMBOLS, SYMBOL_BIGRAMS, TMP_PATH
+	global LETTERS, BIGRAMS, TRIGRAMS, TMP_PATH
 
 	targets = [
 		'https://github.com/torvalds/linux',            # C
@@ -486,6 +539,7 @@ def analyze_target(result_path):
 		'https://github.com/django/django',             # Python
 		'https://github.com/psf/requests',              # Python
 		'https://github.com/facebook/react',            # JavaScript/TypeScript
+		'https://github.com/reactjs/react.dev',
 		'https://github.com/microsoft/vscode',          # TypeScript
 		'https://github.com/sveltejs/svelte',           # JavaScript/TypeScript
 		'https://github.com/nodejs/node',               # JavaScript/C++
@@ -493,6 +547,9 @@ def analyze_target(result_path):
 		'https://github.com/kubernetes/kubernetes',     # Go
 		'https://github.com/golang/go',                 # Go
 		'https://github.com/rust-lang/rust',            # Rust
+		'https://github.com/rust-lang/book',            # Rust
+		'https://github.com/rust-lang/cargo',            # Rust
+		'https://github.com/rust-lang/rfcs',            # Rust
 		'https://github.com/theseus-os/Theseus',        # Rust
 		'https://github.com/bytecodealliance/wasmtime', # Rust
 		'https://github.com/sharkdp/fd',                # Rust
@@ -524,50 +581,18 @@ def analyze_target(result_path):
 		'https://github.com/netwide-assembler/nasm',    # Assembly
 		'https://github.com/BeaEngine/BeaEngine',       # Assembly/C
 		'https://github.com/ApolloTeam-dev/AROS',       # C/Assembly
+		'https://github.com/mdn/content',
+		'https://github.com/progit/progit2',
+		'https://github.com/tldr-pages/tldr',
+		'https://github.com/docker/docs',
+		'https://github.com/pytorch/examples',
+		'https://github.com/GITenberg/Moby-Dick--Or-The-Whale_2701',
+		'https://github.com/GITenberg/The-Adventures-of-Sherlock-Holmes_1661',
+		'https://github.com/GITenberg/The-Great-Gatsby_64317',
+		'https://github.com/GITenberg/Alice-s-Adventures-in-Wonderland_11',
 	]
 
-	extensions = {
-		'.c', '.h',
-		'.cpp', '.hpp', '.cc', '.hh',
-		'.ino',
-		'.cs',
-		'.java',
-		'.kt', '.kts',
-		'.scala',
-		'.groovy',
-		'.swift',
-		'.m', '.mm',
-		'.py',
-		'.rb',
-		'.js', '.jsx',
-		'.ts', '.tsx',
-		'.go',
-		'.rs',
-		'.zig',
-		'.hs',
-		'.ml', '.mli',
-		'.ex', '.exs',
-		'.erl',
-		'.sh', '.bash', '.zsh',
-		'.html', '.htm',
-		'.css', '.scss',
-		'.json', '.yaml', '.yml', '.toml',
-		'.sql', '.proto', '.xml',
-		'.dockerfile', 'Dockerfile',
-		'.R', '.r',
-		'.jl',
-		'.php',
-		'.pl', '.pm',
-		'.lua',
-		'.asm', '.s', '.S',
-		'.v', '.sv', '.vhd', '.vhdl',
-		'.md', '.markdown',
-		'.txt', '.text',
-		'.rst',
-		'.adoc', '.asciidoc',
-		'.org',
-		'.tex',
-	}
+	EXTENSIONS = EXT_TEXT | EXT_C_STYLE | EXT_SCRIPT_STYLE | EXT_DASH_STYLE | EXT_PERCENT_STYLE | EXT_SEMI_STYLE | EXT_PAREN_STAR_STYLE
 
 	# Check
 	print('[Check Target]')
@@ -597,7 +622,7 @@ def analyze_target(result_path):
 	for root, dirs, fs in os.walk(TMP_PATH):
 		for file in fs:
 			name, ext = os.path.splitext(file)
-			if ext.lower() in extensions or name.lower() == 'readme':
+			if ext.lower() in EXTENSIONS or name.lower() == 'readme':
 				files.append(os.path.join(root, file))
 
 	# Calc LETTERS, BIGRAMS
@@ -609,31 +634,20 @@ def analyze_target(result_path):
 	symbol_bigrams = Counter()
 	len_files = len(files)
 	with ProcessPoolExecutor() as executor:
-		for i, (l, b, t, s, sb) in enumerate(executor.map(analyze_target_single, files), 1):
+		for i, (l, b, t) in enumerate(executor.map(analyze_target_single, files), 1):
 			letters += l
 			bigrams += b
 			trigrams += t
-			symbols += s
-			symbol_bigrams += sb
 			print(f'\r\033[K{i}/{len_files} ({i/len_files*100:.1f}%)', end='')
 
 	LETTERS = letters
-	SYMBOLS = symbols
+
 	total_count = sum(bigrams.values())
 	threshold = total_count * 0.9
 	cumulative = 0
 	for bigram, count in bigrams.most_common():
 		cumulative += count
 		BIGRAMS[bigram] = count
-		if cumulative >= threshold:
-			break
-
-	total_count = sum(symbol_bigrams.values())
-	threshold = total_count * 0.9
-	cumulative = 0
-	for bigram, count in symbol_bigrams.most_common():
-		cumulative += count
-		SYMBOL_BIGRAMS[bigram] = count
 		if cumulative >= threshold:
 			break
 
@@ -651,6 +665,41 @@ def analyze_target(result_path):
 
 	# Store result
 	save_analyze_result(result_path)
+
+def get_text_content(full_path, original_text):
+	filename = os.path.basename(full_path)
+	name, ext = os.path.splitext(full_path)
+	ext = ext.lower()
+
+	if ext in EXT_TEXT or name.lower() == 'readme':
+		return original_text
+
+	comments = []
+
+	if ext in EXT_C_STYLE:
+		comments.extend(re.findall(r'/\*[\s\S]*?\*/', original_text))
+		comments.extend(re.findall(r'//.*', original_text))
+	elif ext in EXT_SCRIPT_STYLE:
+		if ext == '.py':
+			comments.extend(re.findall(r'"{3}[\s\S]*?"{3}', original_text))
+			comments.extend(re.findall(r"'{3}[\s\S]*?'{3}", original_text))
+		comments.extend(re.findall(r'#.*', original_text))
+	elif ext in EXT_DASH_STYLE:
+		if ext == '.hs':
+			comments.extend(re.findall(r'\{-[\s\S]*?-\}', original_text))
+		elif ext == '.lua':
+			comments.extend(re.findall(r'--\[\[[\s\S]*?\]\]', original_text))
+		comments.extend(re.findall(r'--.*', original_text))
+	elif ext in EXT_PERCENT_STYLE:
+		comments.extend(re.findall(r'%.*', original_text))
+	elif ext in EXT_SEMI_STYLE:
+		comments.extend(re.findall(r';.*', original_text))
+	elif ext in EXT_PAREN_STAR_STYLE:
+		comments.extend(re.findall(r'\(\*[\s\S]*?\*\)', original_text))
+	else:
+		return ""
+
+	return "\n".join(comments)
 
 def make_initial_layout() -> Layout:
 	grid = [] 
@@ -684,7 +733,7 @@ def flatten(letters):
 	return [item for row in letters for item in row]
 
 def crossover(parents: list[Layout], blank=' '):
-	def unflatten(flat, rows=3, cols=10):
+	def unflatten(flat, rows=ROWS, cols=COLS):
 		return [flat[i*cols:(i+1)*cols] for i in range(rows)]
 
 	parent1 = flatten(parents[0].letters)
@@ -1028,7 +1077,7 @@ if __name__ == '__main__':
 				letters = sys.argv[2]
 			else:
 				index = sys.argv[2]
-				letters = sys.artv[3]
+				letters = sys.argv[3]
 			result = optimize_shuffle(result[index], len(letters), len(letters), letters)
 			for i, l in enumerate(result, 1):
 				print(f'[{i}]')
