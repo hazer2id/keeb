@@ -157,9 +157,9 @@ TRIGRAMS = Counter()
 ROWS = 3
 COLS = 10
 EFFORT_GRID = [
-	[3.2, 2.4, 2.0, 2.2, 20.0, 20.0, 5.2, 5.0, 5.4, 6.2],
+	[3.2, 2.4, 2.0, 2.2, 10.0, 10.0, 5.2, 5.0, 5.4, 6.2],
 	[1.5, 1.3, 1.1, 1.0,  3.5,  6.5, 4.0, 4.1, 4.3, 4.5],
-	[3.0, 2.6, 2.3, 1.6, 20.0, 20.0, 4.6, 5.3, 5.6, 6.0],
+	[3.0, 2.6, 2.3, 1.6, 10.0, 10.0, 4.6, 5.3, 5.6, 6.0],
 ]
 
 FINGER_GRID = [
@@ -305,7 +305,7 @@ def init_score_state():
 	_effort_grid = EFFORT_GRID
 	_finger_grid = FINGER_GRID
 	num_keys = ROWS*COLS
-	max_e = max(max(r) for r in _effort_grid)
+	max_e = max(val for row in _effort_grid for val in row if val < 10.0)
 	half = COLS/2
 
 	BIGRAM_SCORE_TABLE = [[Score() for _ in range(num_keys)] for _ in range(num_keys)]
@@ -322,8 +322,8 @@ def init_score_state():
 			is_center = (4<=c1<=5 or 4<=c2<=5)
 
 			if f1 == f2:
-				weight = 2.5 if is_center else 1.0
-				weight += (row_delta*0.5)
+				weight = 2.0 if is_center else 1.0
+				weight *= (1.2 ** row_delta)
 				self.sfb = weight * (e1+e2)
 			else:
 				has_gap = abs(f1-f2) > 1
@@ -333,12 +333,14 @@ def init_score_state():
 					self.scissors = (e1+e2)
 				elif f2 < f1: # inroll
 					weight = 0.5 if is_switching else 1.0
-					weight *= 0.8 if (has_gap or row_delta != 0) else 1.0
+					weight *= (0.8 ** has_gap)
+					weight *= (0.8 ** row_delta)
 					self.rolling = weight * (max_e*2 - (e1+e2))
 				elif f2 > f1: # outroll
-					weight = 0.5 if is_switching else 0.25
-					weight *= 0.8 if (has_gap or row_delta != 0) else 1.0
-					self.rolling -= weight * (e1+e2)
+					weight = 2.0 if is_switching else 1.0
+					weight *= (1.2 ** has_gap)
+					weight *= (1.2 ** row_delta)
+					self.rolling -= weight * 0.25 * (e1+e2)
 
 	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
 	for i in range(num_keys):
@@ -358,8 +360,8 @@ def init_score_state():
 
 				if f1 == f3 and f1 != f2:
 					row_delta = abs(r1 - r3)
-					weight = 2.5 if is_center else 1.0
-					weight += (row_delta*0.5)
+					weight = 2.0 if is_center else 1.0
+					weight *= (1.2 ** row_delta)
 					self.sfb = weight * (e1+e3)
 				else:
 					row_delta1 = abs(r1 - r2)
@@ -373,15 +375,17 @@ def init_score_state():
 						self.scissors = (e1+e2+e3)
 					elif not is_center and (f3 < f2 < f1): # inroll
 						weight = 0.5 if is_switching else 1.0
-						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
+						weight *= (0.8 ** has_gap)
+						weight *= (0.8 ** row_delta)
 						self.rolling = weight * (max_e*3 - (e1+e2+e3))
 					elif not is_center and (f3 > f2 > f1): # outroll
-						weight = 0.5 if is_switching else 0.25
-						weight *= 0.8 if (has_gap or row_delta_sum != 0) else 1.0
-						self.rolling -= weight * (e1+e2+e3)
+						weight = 2.0 if is_switching else 1.0
+						weight *= (1.2 ** has_gap)
+						weight *= (1.2 ** row_delta_sum)
+						self.rolling -= weight * 0.25 * (e1+e2+e3)
 					else:
-						weight = 0.5 if is_switching else 1.0
-						weight *= 0.8 if (row_delta_sum != 0) else 1.0
+						weight = 2.0 if is_switching else 1.0
+						weight *= (1.2 ** row_delta_sum)
 						self.redirect = weight * (e1+e2+e3)
 
 	def iqr(v):
