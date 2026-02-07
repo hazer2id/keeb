@@ -54,7 +54,7 @@ class Layout:
 	def __eq__(self, other):
 		if not isinstance(other, Layout):
 			return False
-		return self.letters == other.letters
+		return self.letters == other.letters or self.letters[::-1] == other.letters
 
 	def __hash__(self):
 		return hash(tuple(tuple(r) for r in self.letters))
@@ -157,15 +157,15 @@ TRIGRAMS = Counter()
 ROWS = 3
 COLS = 10
 EFFORT_GRID = [
-	[3.2, 2.4, 2.0, 2.2, 10.0, 10.0, 5.2, 5.0, 5.4, 6.2],
-	[1.5, 1.3, 1.1, 1.0,  3.5,  6.5, 4.0, 4.1, 4.3, 4.5],
-	[3.0, 2.6, 2.3, 1.6, 10.0, 10.0, 4.6, 5.3, 5.6, 6.0],
+	[3.2, 2.4, 2.0, 2.2, 10.0, 10.0, 2.2, 2.0, 2.4, 3.2],
+	[1.5, 1.3, 1.1, 1.0,  3.5,  3.5, 1.0, 1.1, 1.3, 1.5],
+	[3.0, 2.6, 2.3, 1.6, 10.0, 10.0, 1.6, 2.3, 2.6, 3.0],
 ]
 
 FINGER_GRID = [
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
+	[4, 3, 2, 1, 1, 5, 5, 6, 7, 8],
+	[4, 3, 2, 1, 1, 5, 5, 6, 7, 8],
+	[4, 3, 2, 1, 1, 5, 5, 6, 7, 8],
 ]
 
 SCORE_RATES = Score(
@@ -246,7 +246,7 @@ EXT_DASH_STYLE = {
 }
 
 EXT_PERCENT_STYLE = {
-	'.erl', '.hrl', 
+	'.erl', '.hrl',
 }
 
 EXT_SEMI_STYLE = {
@@ -265,7 +265,7 @@ EXT_PAREN_STAR_STYLE = {
 def layout_key(l):
 	return (
 		l.total,
-		l.left_usage,
+		-abs(l.left_usage-l.right_usage),
 		-l.score.sfb,
 		l.score.rolling,
 		-l.score.effort,
@@ -314,6 +314,8 @@ def init_score_state():
 			self = BIGRAM_SCORE_TABLE[i][j]
 			r1, c1 = divmod(i, COLS)
 			r2, c2 = divmod(j, COLS)
+			if not ((c1<half and c2<half) or (half<=c1 and half<=c2)):
+				continue
 			f1 = _finger_grid[r1][c1]
 			f2 = _finger_grid[r2][c2]
 			e1 = _effort_grid[r1][c1]
@@ -327,18 +329,15 @@ def init_score_state():
 				self.sfb = weight * (e1+e2)
 			else:
 				has_gap = abs(f1-f2) > 1
-				is_switching = (c1<=4 and 5<=c2)
 
 				if is_center or (not has_gap and row_delta == 2) :
 					self.scissors = (e1+e2)
 				elif f2 < f1: # inroll
-					weight = 0.5 if is_switching else 1.0
-					weight *= (0.8 ** has_gap)
+					weight = 0.8 if has_gap else 1.0
 					weight *= (0.8 ** row_delta)
 					self.rolling = weight * (max_e*2 - (e1+e2))
 				elif f2 > f1: # outroll
-					weight = 2.0 if is_switching else 1.0
-					weight *= (1.2 ** has_gap)
+					weight = 1.2 if has_gap else 1.0
 					weight *= (1.2 ** row_delta)
 					self.rolling -= weight * 0.25 * (e1+e2)
 
@@ -350,6 +349,9 @@ def init_score_state():
 				r1, c1 = divmod(i, COLS)
 				r2, c2 = divmod(j, COLS)
 				r3, c3 = divmod(k, COLS)
+				if not ((c1<half and c2<half and c3<half) or \
+						(half<=c1 and half<=c2 and half<=c3)):
+					continue
 				f1 = _finger_grid[r1][c1]
 				f2 = _finger_grid[r2][c2]
 				f3 = _finger_grid[r3][c3]
@@ -368,23 +370,20 @@ def init_score_state():
 					row_delta2 = abs(r2 - r3)
 					row_delta_sum = row_delta1 + row_delta2
 					has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
-					is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
 
 					if (not has_gap and row_delta1 == 2 and row_delta2 == 2) or \
 							(is_center and (row_delta1 == 2 or row_delta2 == 2)):
 						self.scissors = (e1+e2+e3)
 					elif not is_center and (f3 < f2 < f1): # inroll
-						weight = 0.5 if is_switching else 1.0
-						weight *= (0.8 ** has_gap)
+						weight = 0.8 if has_gap else 1.0
 						weight *= (0.8 ** row_delta)
 						self.rolling = weight * (max_e*3 - (e1+e2+e3))
 					elif not is_center and (f3 > f2 > f1): # outroll
-						weight = 2.0 if is_switching else 1.0
-						weight *= (1.2 ** has_gap)
+						weight = 1.2 if has_gap else 1.0
 						weight *= (1.2 ** row_delta_sum)
 						self.rolling -= weight * 0.25 * (e1+e2+e3)
 					else:
-						weight = 2.0 if is_switching else 1.0
+						weight = 1.0
 						weight *= (1.2 ** row_delta_sum)
 						self.redirect = weight * (e1+e2+e3)
 
