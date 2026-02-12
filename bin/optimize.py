@@ -1,9 +1,8 @@
 #!/usr/bin/env pypy3
 
-import urllib.request
-import urllib.error
-import socket
 import shutil
+import subprocess
+import string
 import zipfile
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
@@ -28,7 +27,6 @@ class Score:
 	sfb: int = 0
 	rolling: int = 0
 	scissors: int = 0
-	redirect: int = 0
 
 @dataclass(slots=True)
 class Layout:
@@ -70,7 +68,6 @@ class Layout:
 		sfb = 0
 		rolling = 0
 		scissors = 0
-		redirect = 0
 
 		self.score = Score()
 		self.left_usage = 0
@@ -119,12 +116,10 @@ class Layout:
 			sfb += count * target_score.sfb
 			rolling += count * target_score.rolling
 			scissors += count * target_score.scissors
-			redirect += count * target_score.redirect
 
 		self.score.sfb = sfb
 		self.score.rolling = rolling
 		self.score.scissors = scissors
-		self.score.redirect = redirect
 
 	def calc_total_score(self):
 		def norm(v, m, d):
@@ -135,15 +130,13 @@ class Layout:
 			sfb=norm(self.score.sfb, SCORE_MEDIAN.sfb, SCORE_SCALE.sfb),
 			rolling=norm(self.score.rolling, SCORE_MEDIAN.rolling, SCORE_SCALE.rolling),
 			scissors=norm(self.score.scissors, SCORE_MEDIAN.scissors, SCORE_SCALE.scissors),
-			redirect=norm(self.score.redirect, SCORE_MEDIAN.redirect, SCORE_SCALE.redirect),
 		)
 
 		self.total = int(
 			(-r.effort) * SCORE_RATES.effort +
 			(-r.sfb) * SCORE_RATES.sfb +
 			(r.rolling) * SCORE_RATES.rolling +
-			(-r.scissors) * SCORE_RATES.scissors +
-			(-r.redirect) * SCORE_RATES.redirect
+			(-r.scissors) * SCORE_RATES.scissors
 		)
 
 TMP_PATH = None
@@ -169,10 +162,9 @@ FINGER_GRID = [
 ]
 
 SCORE_RATES = Score(
-	sfb = 0.30,
-	rolling = 0.30,
-	effort = 0.20,
-	redirect = 0.15,
+	sfb = 0.50,
+	effort = 0.30,
+	rolling = 0.15,
 	scissors = 0.05,
 )
 SCORE_MEDIAN = None
@@ -246,7 +238,7 @@ EXT_DASH_STYLE = {
 }
 
 EXT_PERCENT_STYLE = {
-	'.erl', '.hrl', 
+	'.erl', '.hrl',
 }
 
 EXT_SEMI_STYLE = {
@@ -267,9 +259,8 @@ def layout_key(l):
 		l.total,
 		l.left_usage,
 		-l.score.sfb,
-		l.score.rolling,
 		-l.score.effort,
-		-l.score.redirect,
+		l.score.rolling,
 		-l.score.scissors,
 	)
 
@@ -321,6 +312,7 @@ def init_score_state():
 			row_delta = abs(r1 - r2)
 			is_center = (4<=c1<=5 or 4<=c2<=5)
 
+			# sfb
 			if f1 == f2:
 				weight = 2.0 if is_center else 1.0
 				weight *= (1.2 ** row_delta)
@@ -329,18 +321,16 @@ def init_score_state():
 				has_gap = abs(f1-f2) > 1
 				is_switching = (c1<=4 and 5<=c2)
 
+				# scissors
 				if is_center or (not has_gap and row_delta == 2) :
 					self.scissors = (e1+e2)
-				elif f2 < f1: # inroll
+				else: # rolling
 					weight = 0.5 if is_switching else 1.0
-					weight *= (0.8 ** has_gap)
+					weight *= (0.7 ** has_gap)
 					weight *= (0.8 ** row_delta)
+					if f2 > f1: # outroll
+						weight *= 0.5
 					self.rolling = weight * (max_e*2 - (e1+e2))
-				elif f2 > f1: # outroll
-					weight = 2.0 if is_switching else 1.0
-					weight *= (1.2 ** has_gap)
-					weight *= (1.2 ** row_delta)
-					self.rolling -= weight * 0.25 * (e1+e2)
 
 	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
 	for i in range(num_keys):
@@ -356,37 +346,60 @@ def init_score_state():
 				e1 = _effort_grid[r1][c1]
 				e2 = _effort_grid[r2][c2]
 				e3 = _effort_grid[r3][c3]
-				is_center = (4<=c1<=5 or 4<=c2<=5 or 4<=c3<=5)
 
-				if f1 == f3 and f1 != f2:
-					row_delta = abs(r1 - r3)
-					weight = 2.0 if is_center else 1.0
-					weight *= (1.2 ** row_delta)
-					self.sfb = weight * (e1+e3)
+				# sfb
+				sfb1 = (f1 == f2)
+				sfb2 = (f2 == f3)
+				if sfb1 or sfb2:
+					if sfb1:
+						weight = 2.0 if (4<=c1<=5 or 4<=c2<=5) else 1.0
+						weight *= (1.2 ** abs(r1-r2))
+						self.sfb += 0.5 * weight * (e1+e2)
+					if sfb2:
+						weight = 2.0 if (4<=c2<=5 or 4<=c3<=5) else 1.0
+						weight *= (1.2 ** abs(r2-r3))
+						self.sfb += 0.5 * weight * (e2+e3)
+				# sfs
+				elif f1 == f3:
+					weight = 2.0 if (4<=c1<=5 or 4<=c3<=5) else 1.0
+					weight *= (1.2 ** abs(r1-r3))
+					self.sfb += weight * (e1+e3)
 				else:
+					is_center1 = (4<=c1<=5 or 4<=c2<=5)
+					is_center2 = (4<=c2<=5 or 4<=c3<=5)
 					row_delta1 = abs(r1 - r2)
 					row_delta2 = abs(r2 - r3)
 					row_delta_sum = row_delta1 + row_delta2
-					has_gap = abs(f1 - f2) > 1 or abs(f2 - f3) > 1
+					has_gap1 = abs(f1 - f2) > 1
+					has_gap2 = abs(f2 - f3) > 1
+					has_gap_sum = has_gap1 + has_gap2
 					is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
 
-					if (not has_gap and row_delta1 == 2 and row_delta2 == 2) or \
-							(is_center and (row_delta1 == 2 or row_delta2 == 2)):
-						self.scissors = (e1+e2+e3)
-					elif not is_center and (f3 < f2 < f1): # inroll
-						weight = 0.5 if is_switching else 1.0
-						weight *= (0.8 ** has_gap)
-						weight *= (0.8 ** row_delta)
-						self.rolling = weight * (max_e*3 - (e1+e2+e3))
-					elif not is_center and (f3 > f2 > f1): # outroll
-						weight = 2.0 if is_switching else 1.0
-						weight *= (1.2 ** has_gap)
-						weight *= (1.2 ** row_delta_sum)
-						self.rolling -= weight * 0.25 * (e1+e2+e3)
-					else:
-						weight = 2.0 if is_switching else 1.0
-						weight *= (1.2 ** row_delta_sum)
-						self.redirect = weight * (e1+e2+e3)
+					# scissors
+					scissors1 = is_center1 or (not has_gap1 and row_delta1 == 2)
+					scissors2 = is_center2 or (not has_gap2 and row_delta2 == 2)
+					if scissors1 or scissors2:
+						if scissors1:
+							self.scissors += 0.5 * (e1+e2)
+						if scissors2:
+							self.scissors += 0.5 * (e2+e3)
+					else: # rolling
+						if (f3 < f2 < f1): # inroll
+							weight = 0.5 if is_switching else 1.0
+						elif (f3 > f2 > f1): # outroll
+							weight = 0.25 if is_switching else 0.5
+						else: # redirect
+							weight = -1.0
+
+						if weight > 0:
+							s = 1
+							e = (max_e*3 - (e1+e2+e3))
+						else:
+							s = -1
+							e = e1+e2+e3
+						weight *= 0.7 ** (s * has_gap_sum)
+						weight *= 0.8 ** (s * row_delta_sum)
+						self.rolling = weight * e
 
 	def iqr(v):
 		q = statistics.quantiles(v, n=4, method="inclusive")
@@ -425,28 +438,34 @@ def check_target_url(url):
 
 def download_target(url, dest):
 	repo_name = url.rstrip('/').split('/')[-1]
-	base_url = url.rstrip('/') + '/archive/refs/heads/'
+	base_url = url.rstrip('/') + '/zipball/HEAD'
+	suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+	target_dir = os.path.join(dest, f"{repo_name}_{suffix}")
+	os.makedirs(target_dir, exist_ok=True)
 
-	for u in [base_url+'master.zip', base_url+'main.zip']:
-		try:
-			with urllib.request.urlopen(u) as res:
-				z = os.path.join(dest, f'{repo_name}.zip')
-				with open(z, 'wb') as f:
-					while True:
-						buf = res.read(8192)
-						if not buf:
-							break
-						f.write(buf)
+	try:
+		z = os.path.join(target_dir, f'{repo_name}.zip')
+		subprocess.run(
+			[
+				'curl', '-L', '-f', '-s',
+				'--connect-timeout', '30',
+				'--retry', '3',
+				'--retry-delay', '2',
+				'-o', z, base_url
+			],
+			check=True, capture_output=True
+		)
 
+		if zipfile.is_zipfile(z):
 			with zipfile.ZipFile(z, 'r') as zz:
-				zz.extractall(dest)
-			os.remove(z)
-			return True
-		except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout):
-			try: os.remove(z)
-			except: pass
+				zz.extractall(target_dir)
+	except Exception as e:
+		print(e)
+		os.remove(z)
+		return False
 
-	return False
+	os.remove(z)
+	return True
 
 def cleanup(sig, frame):
 	global TMP_PATH
@@ -598,27 +617,17 @@ def analyze_target(result_path):
 
 	EXTENSIONS = EXT_TEXT | EXT_C_STYLE | EXT_SCRIPT_STYLE | EXT_DASH_STYLE | EXT_PERCENT_STYLE | EXT_SEMI_STYLE | EXT_PAREN_STAR_STYLE
 
-	# Check
-	print('[Check Target]')
-	len_targets = len(targets)
-	for i, url in enumerate(targets, 1):
-		if check_target_url(url):
-			print(f'\r\033[K{i}/{len_targets} ({i/len_targets*100:.1f}%) {url}', end='')
-
-		else:
-			print(f'\n[FAIL] {url}')
-	print(f'\r\033[K...Done')
-
 	# Download
+	len_targets = len(targets)
 	TMP_PATH = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='keeb')
 	print('[Download Target]')
 	downloaded = 0
-	with ThreadPoolExecutor(max_workers=8) as executor:
-		futures = [executor.submit(download_target, url, TMP_PATH) for url in targets]
-		for future in as_completed(futures):
-			future.result()
+	for url in targets:
+		if download_target(url, TMP_PATH):
 			downloaded += 1
 			print(f'\r\033[K{downloaded}/{len_targets} ({downloaded/len_targets*100:.1f}%)', end='')
+		else:
+			print(f'Failed {url}')
 	print(f'\r\033[K...Done')
 
 	# file list
@@ -647,7 +656,7 @@ def analyze_target(result_path):
 	LETTERS = letters
 
 	total_count = sum(bigrams.values())
-	threshold = total_count * 0.9
+	threshold = total_count * 0.99
 	cumulative = 0
 	for bigram, count in bigrams.most_common():
 		cumulative += count
@@ -656,7 +665,7 @@ def analyze_target(result_path):
 			break
 
 	total_count = sum(trigrams.values())
-	threshold = total_count * 0.7
+	threshold = total_count * 0.9
 	cumulative = 0
 	for trigram, count in trigrams.most_common():
 		cumulative += count
@@ -910,7 +919,7 @@ def optimize_sa(base_layout: Layout, result_len, max_iter=10000, cooling_rate=0.
 
 	return sort_unique_layouts(result, result_len)
 
-def optimize(base_layouts: list[Layout], elites_len=10):
+def optimize(base_layouts: list[Layout], result_path, elites_len=10):
 	is_improved = False
 	max_generation = elites_len*10
 	max_population = elites_len*10
@@ -1020,8 +1029,7 @@ def print_layout(layout: Layout):
 	print(f'{layout.score.effort:,.0f}\t', end='')
 	print(f'{layout.score.sfb:,.0f}\t', end='')
 	print(f'{layout.score.rolling:,.0f}\t', end='')
-	print(f'{layout.score.scissors:,.0f}\t', end='')
-	print(f'{layout.score.redirect:,.0f}')
+	print(f'{layout.score.scissors:,.0f}')
 	if layout.left_usage > 0:
 		total = layout.left_usage + layout.right_usage
 		left_percent = (layout.left_usage / total) * 100
@@ -1080,24 +1088,23 @@ if __name__ == '__main__':
 				index = 0
 				letters = sys.argv[2]
 			else:
-				index = sys.argv[2]
+				index = int(sys.argv[2])
 				letters = sys.argv[3]
-			result = optimize_shuffle(result[index], len(letters), len(letters), letters)
-			for i, l in enumerate(result, 1):
-				print(f'[{i}]')
-				print_layout(l)
+			if letters != '':
+				result = optimize_shuffle(result[index], len(letters), len(letters), letters)
 		else:
 			# Optimize
 			is_improved = True
 			r = 1
 			while is_improved:
 				print(f'[Optimize {r}]')
-				result, is_improved = optimize(result)
+				result, is_improved = optimize(result, result_path)
 				r += 1
 			print(f'\r\033[K...Done')
-			for i, l in enumerate(result, 1):
-				print(f'[{i}]')
-				print_layout(l)
+
+		for i, l in enumerate(result, 1):
+			print(f'[{i}]')
+			print_layout(l)
 
 	except KeyboardInterrupt:
 		cleanup(None, None)

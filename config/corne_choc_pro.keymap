@@ -146,29 +146,29 @@
             bindings = <&kp SPACE>;
             layers = <0 1 2 3 6>;
         };
-        combo_ret {
+        combo_lshft {
             key-positions = <14 15>;
-            bindings = <&kp RET>;
+            bindings = <&sk LSHFT>;
             layers = <0 1 2 3>;
         };
-        combo_tab {
+        combo_cw {
             key-positions = <13 15>;
-            bindings = <&kp TAB>;
+            bindings = <&caps_word>;
             layers = <0 1 2 3>;
         };
         combo_esc {
             key-positions = <25 26>;
             bindings = <&kp ESC>;
-            layers = <0 1 2 3>;
+            layers = <0 1 2 3 6>;
         };
-        combo_lshft {
+        combo_ret {
             key-positions = <26 27>;
-            bindings = <&sk LSHFT>;
-            layers = <0 1 2 3>;
+            bindings = <&kp RET>;
+            layers = <0 1 2 3 6>;
         };
-        combo_cw {
+        combo_tab {
             key-positions = <25 27>;
-            bindings = <&caps_word>;
+            bindings = <&kp TAB>;
             layers = <0 1 2 3>;
         };
         combo_bspc {
@@ -202,18 +202,18 @@
       base1_layer {
          display-name = "BASE1";
          bindings = <
-            &kp D &kp L &kp A &kp S &none       &none &none &none &none &none &none &none
-            &kp T &kp I &kp E &kp N &kp Z       &none &none &none &none &none &none &none
-            &kp C &kp H &kp O &kp R &lang1 KOR1             &none &none &none &none &none
+            &kp M &kp H &kp A &kp L &none       &none &none &none &none &none &none &none
+            &kp T &kp I &kp E &kp R &kp Z       &none &none &none &none &none &none &none
+            &kp S &kp C &kp O &kp N &lang1 KOR1             &none &none &none &none &none
             &sl ARROWS &sl BASE2 &sl SYM1 &none &none &none
             >;
       };
       base2_layer {
          display-name = "BASE2";
          bindings = <
-            &kp B &kp V &kp G &kp Y &none       &none &none &none &none &none &none &none
-            &kp F &kp P &kp U &kp M &kp J       &none &none &none &none &none &none &none
-            &kp W &kp K &kp Q &kp X &lang2 KOR1             &none &none &none &none &none
+            &kp W &kp V &kp Y &kp B &none       &none &none &none &none &none &none &none
+            &kp F &kp P &kp U &kp D &kp Q       &none &none &none &none &none &none &none
+            &kp K &kp X &kp J &kp G &lang2 KOR1             &none &none &none &none &none
             &trans &to BASE1 &trans &none &none &none
             >;
       };
