@@ -298,6 +298,12 @@ def init_score_state():
 	num_keys = ROWS*COLS
 	max_e = max(val for row in _effort_grid for val in row if val < 10.0)
 	half = COLS/2
+	inroll_weight = 1.0
+	outroll_weight = 0.5
+	gap_weight = 0.7
+	row_weight = 0.8
+	switching_weight = 0.5
+	center_weight = 2.0
 
 	BIGRAM_SCORE_TABLE = [[Score() for _ in range(num_keys)] for _ in range(num_keys)]
 	for i in range(num_keys):
@@ -314,8 +320,8 @@ def init_score_state():
 
 			# sfb
 			if f1 == f2:
-				weight = 2.0 if is_center else 1.0
-				weight *= (1.2 ** row_delta)
+				weight = center_weight if is_center else 1.0
+				weight *= (row_weight ** -row_delta)
 				self.sfb = weight * (e1+e2)
 			else:
 				has_gap = abs(f1-f2) > 1
@@ -325,11 +331,12 @@ def init_score_state():
 				if is_center or (not has_gap and row_delta == 2) :
 					self.scissors = (e1+e2)
 				else: # rolling
-					weight = 0.5 if is_switching else 1.0
-					weight *= (0.7 ** has_gap)
-					weight *= (0.8 ** row_delta)
+					weight = inroll_weight
+					weight *= switching_weight if is_switching else 1.0
+					weight *= (gap_weight ** has_gap)
+					weight *= (row_weight ** row_delta)
 					if f2 > f1: # outroll
-						weight *= 0.5
+						weight *= outroll_weight
 					self.rolling = weight * (max_e*2 - (e1+e2))
 
 	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
@@ -352,17 +359,17 @@ def init_score_state():
 				sfb2 = (f2 == f3)
 				if sfb1 or sfb2:
 					if sfb1:
-						weight = 2.0 if (4<=c1<=5 or 4<=c2<=5) else 1.0
-						weight *= (1.2 ** abs(r1-r2))
+						weight = center_weight if (4<=c1<=5 or 4<=c2<=5) else 1.0
+						weight *= (row_weight ** -abs(r1-r2))
 						self.sfb += 0.5 * weight * (e1+e2)
 					if sfb2:
-						weight = 2.0 if (4<=c2<=5 or 4<=c3<=5) else 1.0
-						weight *= (1.2 ** abs(r2-r3))
+						weight = center_weight if (4<=c2<=5 or 4<=c3<=5) else 1.0
+						weight *= (row_weight ** -abs(r2-r3))
 						self.sfb += 0.5 * weight * (e2+e3)
 				# sfs
 				elif f1 == f3:
-					weight = 2.0 if (4<=c1<=5 or 4<=c3<=5) else 1.0
-					weight *= (1.2 ** abs(r1-r3))
+					weight = center_weight if (4<=c1<=5 or 4<=c3<=5) else 1.0
+					weight *= (row_weight ** -abs(r1-r3))
 					self.sfb += weight * (e1+e3)
 				else:
 					is_center1 = (4<=c1<=5 or 4<=c2<=5)
@@ -385,11 +392,13 @@ def init_score_state():
 							self.scissors += 0.5 * (e2+e3)
 					else: # rolling
 						if (f3 < f2 < f1): # inroll
-							weight = 0.5 if is_switching else 1.0
+							weight = inroll_weight
+							weight *= switching_weight if is_switching else 1.0
 						elif (f3 > f2 > f1): # outroll
-							weight = 0.25 if is_switching else 0.5
+							weight = outroll_weight
+							weight *= switching_weight if is_switching else 1.0
 						else: # redirect
-							weight = -1.0
+							weight = -inroll_weight
 
 						if weight > 0:
 							s = 1
@@ -397,8 +406,8 @@ def init_score_state():
 						else:
 							s = -1
 							e = e1+e2+e3
-						weight *= 0.7 ** (s * has_gap_sum)
-						weight *= 0.8 ** (s * row_delta_sum)
+						weight *= gap_weight ** (s * has_gap_sum)
+						weight *= row_weight ** (s * row_delta_sum)
 						self.rolling = weight * e
 
 	def iqr(v):
@@ -407,7 +416,7 @@ def init_score_state():
 
 	base_layout = make_initial_layout()
 	unique_layouts = {base_layout.clone()}
-	while len(unique_layouts) < 100:
+	while len(unique_layouts) < 1000:
 		unique_layouts.add(make_random(base_layout))
 	layouts = list(unique_layouts)
 
