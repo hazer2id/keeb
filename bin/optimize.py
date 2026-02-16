@@ -282,7 +282,7 @@ def sort_unique_layouts(layouts: list[Layout], size):
 		is_unique = True
 		for l in result:
 			if layout == l or \
-					20 < sum(1 for c1, c2 in zip(a, flatten(l.letters)) if c1 == c2):
+					9 >= sum(1 for c1, c2 in zip(a, flatten(l.letters)) if c1 != c2):
 				is_unique = False
 				break
 
@@ -299,7 +299,7 @@ def init_score_state():
 	max_e = max(val for row in _effort_grid for val in row if val < 10.0)
 	half = COLS/2
 	inroll_weight = 1.0
-	outroll_weight = 0.5
+	outroll_weight = 0.7
 	gap_weight = 0.7
 	row_weight = 0.8
 	switching_weight = 0.5
@@ -353,18 +353,22 @@ def init_score_state():
 				e1 = _effort_grid[r1][c1]
 				e2 = _effort_grid[r2][c2]
 				e3 = _effort_grid[r3][c3]
+				is_center1 = (4<=c1<=5 or 4<=c2<=5)
+				is_center2 = (4<=c2<=5 or 4<=c3<=5)
+				row_delta1 = abs(r1 - r2)
+				row_delta2 = abs(r2 - r3)
 
 				# sfb
 				sfb1 = (f1 == f2)
 				sfb2 = (f2 == f3)
 				if sfb1 or sfb2:
 					if sfb1:
-						weight = center_weight if (4<=c1<=5 or 4<=c2<=5) else 1.0
-						weight *= (row_weight ** -abs(r1-r2))
+						weight = center_weight if is_center1 else 1.0
+						weight *= (row_weight ** -row_delta1)
 						self.sfb += 0.5 * weight * (e1+e2)
 					if sfb2:
-						weight = center_weight if (4<=c2<=5 or 4<=c3<=5) else 1.0
-						weight *= (row_weight ** -abs(r2-r3))
+						weight = center_weight if is_center2 else 1.0
+						weight *= (row_weight ** -row_delta2)
 						self.sfb += 0.5 * weight * (e2+e3)
 				# sfs
 				elif f1 == f3:
@@ -372,10 +376,6 @@ def init_score_state():
 					weight *= (row_weight ** -abs(r1-r3))
 					self.sfb += weight * (e1+e3)
 				else:
-					is_center1 = (4<=c1<=5 or 4<=c2<=5)
-					is_center2 = (4<=c2<=5 or 4<=c3<=5)
-					row_delta1 = abs(r1 - r2)
-					row_delta2 = abs(r2 - r3)
 					row_delta_sum = row_delta1 + row_delta2
 					has_gap1 = abs(f1 - f2) > 1
 					has_gap2 = abs(f2 - f3) > 1
@@ -392,7 +392,7 @@ def init_score_state():
 							self.scissors += 0.5 * (e2+e3)
 					else: # rolling
 						if (f3 < f2 < f1): # inroll
-							weight = inroll_weight
+							weight = inroll_weight * 2.0
 							weight *= switching_weight if is_switching else 1.0
 						elif (f3 > f2 > f1): # outroll
 							weight = outroll_weight
@@ -785,7 +785,7 @@ def crossover(parents: list[Layout], blank=' '):
 
 def fine_tune_effort(base_layout: Layout):
 	letters = [row[:] for row in base_layout.letters]
-	positions = [(r,c) for r in range(3) for c in range(10) if letters[r][c] != ' ']
+	positions = [(r,c) for r in range(ROWS) for c in range(COLS) if letters[r][c] != ' ']
 	positions.sort(key=lambda pos: LETTERS.get(letters[pos[0]][pos[1]],0), reverse=True)
 	candidates = [base_layout.clone()]
 
@@ -879,7 +879,7 @@ def optimize_shuffle(base_layout: Layout, result_len, length=6, custom=""):
 		letters = random.sample(list(LETTERS.keys()), length)
 	layouts = [base_layout.clone()]
 	l = [row[:] for row in base_layout.letters]
-	positions = [(r, c) for r in range(3) for c in range(10) if base_layout.letters[r][c] in letters]
+	positions = [(r, c) for r in range(ROWS) for c in range(COLS) if base_layout.letters[r][c] in letters]
 	perms = permutations(letters, len(letters))
 
 	for perm in perms:
