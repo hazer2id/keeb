@@ -201,7 +201,7 @@
             &kp G &kp X &kp U &kp F &none       &none &none &none &none &none &none &none
             &kp P &kp H &kp O &kp M &lang1 KOR1 &none &none &none &none &none &none &none
             &kp K &kp J &kp Y &kp V &lang2 KOR1             &none &none &none &none &none
-            &kp DEL &to BASE1 &trans &none &none &none
+            &kp BSPC &to BASE1 &kp DEL &none &none &none
             >;
       };
       kor1_layer {
@@ -219,7 +219,7 @@
             &kp O &kp I &kp U &kp Y &none        &none &none &none &none &none &none &none
             &kp L &kp K &kp J &kp H &lang1 BASE1 &none &none &none &none &none &none &none
             &kp P &kp M &kp N &kp B &lang2 BASE1             &none &none &none &none &none
-            &kp DEL &to KOR1 &trans &none &none &none
+            &kp BSPC &to KOR1 &kp DEL &none &none &none
             >;
       };
       arrows_layer {
