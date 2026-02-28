@@ -35,7 +35,7 @@ class Layout:
 	total: int = 0
 	left_usage: int = 0
 	right_usage: int = 0
-	source: str = "random"
+	source: str = ""
 
 	def clone(self):
 		return Layout(
@@ -59,10 +59,9 @@ class Layout:
 
 	def calc_scores(self):
 		_effort_grid = EFFORT_GRID
+		_finger_grid = FINGER_GRID
 		_bigrams = BIGRAMS
 		_trigrams = TRIGRAMS
-		_bigram_score_table = BIGRAM_SCORE_TABLE
-		_trigram_score_table = TRIGRAM_SCORE_TABLE
 		pos = {}
 
 		sfb = 0
@@ -90,32 +89,112 @@ class Layout:
 					else:
 						self.right_usage += l
 
+		max_e = max(val for row in _effort_grid for val in row if val < 100)
+		min_e = min(val for row in _effort_grid for val in row)
+		half = COLS/2
+		gap_weight = 0.7
+		row_weight = 0.8
+		hand_weight = 0.7
+		switch_weight = 0.3
+		center_weight = 2.0
+
+		max_sum = max_e * 2
+		K = max_sum ** 2
 		for pair, count in _bigrams.items():
 			a, b = pair[0], pair[1]
-
 			if a not in pos or b not in pos:
 				continue
+			r1, c1 = divmod(pos[a], COLS)
+			r2, c2 = divmod(pos[b], COLS)
+			h1 = c1<half
+			h2 = c2<half
+			f1 = _finger_grid[r1][c1]
+			f2 = _finger_grid[r2][c2]
+			e1 = _effort_grid[r1][c1]
+			e2 = _effort_grid[r2][c2]
+			row_delta = abs(r1 - r2)
+			is_center = (4<=c1<=5 or 4<=c2<=5)
+			is_switched = h1 > h2
 
-			i = pos[a]
-			j = pos[b]
-			target_score = _bigram_score_table[i][j]
-			sfb += count * target_score.sfb
-			rolling += count * target_score.rolling
-			scissors += count * target_score.scissors
+			# sfb
+			if f1 == f2:
+				weight = center_weight if is_center else 1.0
+				weight *= switch_weight if is_switched else 1.0
+				weight *= (row_weight ** -row_delta)
+				sfb += count * weight * (e1+e2)
+			else:
+				has_gap = abs(f1-f2) > 1
+				# scissors
+				if is_center or (not has_gap and row_delta == 2) :
+					weight = switch_weight if is_switched else 1.0
+					scissors += count * weight * (e1+e2)
+				else: # rolling
+					k = a in VOWELS + b in VOWELS
+					if f1 > f2: # inroll
+						weight = [0.8, 1.0, 1.2][k]
+					elif f1 < f2: # outroll
+						weight = [0.2, 0.4, 0.6][k]
+					weight *= (gap_weight ** has_gap)
+					weight *= (row_weight ** row_delta)
+					weight *= switch_weight if is_switched else 1.0
+					rolling += count * weight * (K / (e1+e2))
 
+		max_sum = max_e * 3
+		min_sum = min_e * 3
+		K = max_sum ** 2
 		for pair, count in _trigrams.items():
 			a, b, c = pair[0], pair[1], pair[2]
-
 			if a not in pos or b not in pos or c not in pos:
 				continue
+			r1, c1 = divmod(pos[a], COLS)
+			r2, c2 = divmod(pos[b], COLS)
+			r3, c3 = divmod(pos[c], COLS)
+			h1 = c1<half
+			h2 = c2<half
+			h3 = c3<half
+			f1 = _finger_grid[r1][c1]
+			f2 = _finger_grid[r2][c2]
+			f3 = _finger_grid[r3][c3]
+			e1 = _effort_grid[r1][c1]
+			e2 = _effort_grid[r2][c2]
+			e3 = _effort_grid[r3][c3]
+			is_center = (4<=c1<=5 or 4<=c2<=5 or 4<=c3<=5)
+			row_delta1 = abs(r1 - r2)
+			row_delta2 = abs(r2 - r3)
+			row_delta_sum = row_delta1 + row_delta2
+			has_gap1 = abs(f1 - f2) > 1
+			has_gap2 = abs(f2 - f3) > 1
+			has_gap_sum = has_gap1 + has_gap2
+			is_switched = h1 > h2 or h2 > h3
 
-			i = pos[a]
-			j = pos[b]
-			k = pos[c]
-			target_score = _trigram_score_table[i][j][k]
-			sfb += count * target_score.sfb
-			rolling += count * target_score.rolling
-			scissors += count * target_score.scissors
+			# sfs
+			if f1 == f3:
+				weight = center_weight if (4<=c1<=5 or 4<=c3<=5) else 1.0
+				weight *= (row_weight ** -abs(r1-r3))
+				weight *= hand_weight if h1 != h2 else 1.0
+				sfb += count * 0.5 * weight * (e1+e3)
+
+			# rolling
+			if (h1 == h2 == h3) and (f1 != f2 != f3) and \
+					not is_center and row_delta1 != 2 and row_delta2 != 2:
+				k = a in VOWELS + b in VOWELS + c in VOWELS
+				if (f1 > f2 > f3): # inroll
+					weight = [1.2, 1.5, 1.5, 2.0][k]
+				elif (f1 < f2 < f3): # outroll
+					weight = [0.4, 0.6, 0.6, 0.8][k]
+				else: # redirect
+					weight = [-0.5, 0.0, 0.0, 0.2][k]
+
+				if weight > 0:
+					s = 1
+					e = K / (e1+e2+e3)
+				else:
+					s = -1
+					e = K / ((max_sum + min_sum) - (e1+e2+e3))
+				weight *= switch_weight ** (s * is_switched)
+				weight *= gap_weight ** (s * has_gap_sum)
+				weight *= row_weight ** (s * row_delta_sum)
+				rolling += count * weight * e
 
 		self.score.sfb = sfb
 		self.score.rolling = rolling
@@ -132,12 +211,18 @@ class Layout:
 			scissors=norm(self.score.scissors, SCORE_MEDIAN.scissors, SCORE_SCALE.scissors),
 		)
 
-		self.total = int(
+		self.total = int((
 			(-r.effort) * SCORE_RATES.effort +
 			(-r.sfb) * SCORE_RATES.sfb +
 			(r.rolling) * SCORE_RATES.rolling +
 			(-r.scissors) * SCORE_RATES.scissors
-		)
+		) * 1e9)
+
+	def flatten(self):
+		return [item for row in self.letters for item in row]
+
+	def flatten_reverse(self):
+		return [item for row in self.letters for item in row[::-1]]
 
 TMP_PATH = None
 ANALYZE_RESULT_FILENAME = 'analyze_result.tsv'
@@ -147,31 +232,30 @@ LETTERS = Counter()
 BIGRAMS = Counter()
 TRIGRAMS = Counter()
 
+VOWELS = 'aeiouy'
 ROWS = 3
 COLS = 10
 EFFORT_GRID = [
-	[2.6,  1.7, 1.3, 1.5, 3.5, 10.0, 4.5, 4.3, 4.7, 5.6],
-	[10.0, 1.1, 1.0, 1.0, 2.8, 10.0, 4.0, 4.0, 4.1, 4.5],
-	[4.1,  2.5, 1.9, 1.7, 3.2, 10.0, 4.7, 4.9, 5.5, 7.1],
+	[3.3, 1.8, 1.5, 2.0, 5.0, 5.0*4, 2.0*4, 1.5*4, 1.8*4, 3.3*4],
+	[100, 1.2, 1.0, 1.0, 4.0, 4.0*4, 1.0*4, 1.0*4, 1.2*4, 1.5*4],
+	[2.8, 2.3, 2.0, 1.5, 4.5, 4.5*4, 1.5*4, 2.0*4, 2.3*4, 2.8*4],
 ]
 
 FINGER_GRID = [
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
-	[4, 3, 2, 1, 1, 1, 1, 2, 3, 4],
+	[4, 3, 2, 1, 1],
+	[4, 3, 2, 1, 1],
+	[4, 3, 2, 1, 1],
 ]
+FINGER_GRID = [r + r[::-1] for r in FINGER_GRID]
 
 SCORE_RATES = Score(
-	sfb = 0.50,
+	sfb = 0.40,
 	effort = 0.30,
-	rolling = 0.15,
-	scissors = 0.05,
+	rolling = 0.20,
+	scissors = 0.10,
 )
 SCORE_MEDIAN = None
 SCORE_SCALE = None
-
-BIGRAM_SCORE_TABLE = None
-TRIGRAM_SCORE_TABLE = None
 
 EXT_TEXT = {
 	'.md', '.markdown',
@@ -254,10 +338,13 @@ EXT_PAREN_STAR_STYLE = {
 	'.pas', '.pp',
 }
 
+def unflatten(flat, rows=ROWS, cols=COLS):
+	return [flat[i*cols:(i+1)*cols] for i in range(rows)]
+
 def layout_key(l):
 	return (
 		l.total,
-		l.left_usage,
+		-abs(l.left_usage-l.right_usage),
 		-l.score.sfb,
 		-l.score.effort,
 		l.score.rolling,
@@ -278,11 +365,10 @@ def sort_unique_layouts(layouts: list[Layout], size):
 	for layout in layouts:
 		if len(result) == size:
 			break
-		a = flatten(layout.letters)
 		is_unique = True
 		for l in result:
 			if layout == l or \
-					9 >= sum(1 for c1, c2 in zip(a, flatten(l.letters)) if c1 != c2):
+					9 >= sum(1 for c1, c2 in zip(layout.flatten(), l.flatten()) if c1 != c2):
 				is_unique = False
 				break
 
@@ -292,132 +378,15 @@ def sort_unique_layouts(layouts: list[Layout], size):
 	return result
 
 def init_score_state():
-	global SCORE_MEDIAN, SCORE_SCALE, BIGRAM_SCORE_TABLE, TRIGRAM_SCORE_TABLE
-	_effort_grid = EFFORT_GRID
-	_finger_grid = FINGER_GRID
-	num_keys = ROWS*COLS
-	max_e = max(val for row in _effort_grid for val in row if val < 10.0)
-	half = COLS/2
-	inroll_weight = 1.0
-	outroll_weight = 0.7
-	gap_weight = 0.7
-	row_weight = 0.8
-	switching_weight = 0.5
-	center_weight = 2.0
-
-	BIGRAM_SCORE_TABLE = [[Score() for _ in range(num_keys)] for _ in range(num_keys)]
-	for i in range(num_keys):
-		for j in range(num_keys):
-			self = BIGRAM_SCORE_TABLE[i][j]
-			r1, c1 = divmod(i, COLS)
-			r2, c2 = divmod(j, COLS)
-			f1 = _finger_grid[r1][c1]
-			f2 = _finger_grid[r2][c2]
-			e1 = _effort_grid[r1][c1]
-			e2 = _effort_grid[r2][c2]
-			row_delta = abs(r1 - r2)
-			is_center = (4<=c1<=5 or 4<=c2<=5)
-
-			# sfb
-			if f1 == f2:
-				weight = center_weight if is_center else 1.0
-				weight *= (row_weight ** -row_delta)
-				self.sfb = weight * (e1+e2)
-			else:
-				has_gap = abs(f1-f2) > 1
-				is_switching = (c1<=4 and 5<=c2)
-
-				# scissors
-				if is_center or (not has_gap and row_delta == 2) :
-					self.scissors = (e1+e2)
-				else: # rolling
-					weight = inroll_weight
-					weight *= switching_weight if is_switching else 1.0
-					weight *= (gap_weight ** has_gap)
-					weight *= (row_weight ** row_delta)
-					if f2 > f1: # outroll
-						weight *= outroll_weight
-					self.rolling = weight * (max_e*2 - (e1+e2))
-
-	TRIGRAM_SCORE_TABLE = [[[Score() for _ in range(num_keys)] for _ in range(num_keys)] for _ in range(num_keys)]
-	for i in range(num_keys):
-		for j in range(num_keys):
-			for k in range(num_keys):
-				self = TRIGRAM_SCORE_TABLE[i][j][k]
-				r1, c1 = divmod(i, COLS)
-				r2, c2 = divmod(j, COLS)
-				r3, c3 = divmod(k, COLS)
-				f1 = _finger_grid[r1][c1]
-				f2 = _finger_grid[r2][c2]
-				f3 = _finger_grid[r3][c3]
-				e1 = _effort_grid[r1][c1]
-				e2 = _effort_grid[r2][c2]
-				e3 = _effort_grid[r3][c3]
-				is_center1 = (4<=c1<=5 or 4<=c2<=5)
-				is_center2 = (4<=c2<=5 or 4<=c3<=5)
-				row_delta1 = abs(r1 - r2)
-				row_delta2 = abs(r2 - r3)
-
-				# sfb
-				sfb1 = (f1 == f2)
-				sfb2 = (f2 == f3)
-				if sfb1 or sfb2:
-					if sfb1:
-						weight = center_weight if is_center1 else 1.0
-						weight *= (row_weight ** -row_delta1)
-						self.sfb += 0.5 * weight * (e1+e2)
-					if sfb2:
-						weight = center_weight if is_center2 else 1.0
-						weight *= (row_weight ** -row_delta2)
-						self.sfb += 0.5 * weight * (e2+e3)
-				# sfs
-				elif f1 == f3:
-					weight = center_weight if (4<=c1<=5 or 4<=c3<=5) else 1.0
-					weight *= (row_weight ** -abs(r1-r3))
-					self.sfb += weight * (e1+e3)
-				else:
-					row_delta_sum = row_delta1 + row_delta2
-					has_gap1 = abs(f1 - f2) > 1
-					has_gap2 = abs(f2 - f3) > 1
-					has_gap_sum = has_gap1 + has_gap2
-					is_switching = (c1<=4 and 5<=c2) or (c2<=4 and 5<=c3)
-
-					# scissors
-					scissors1 = is_center1 or (not has_gap1 and row_delta1 == 2)
-					scissors2 = is_center2 or (not has_gap2 and row_delta2 == 2)
-					if scissors1 or scissors2:
-						if scissors1:
-							self.scissors += 0.5 * (e1+e2)
-						if scissors2:
-							self.scissors += 0.5 * (e2+e3)
-					else: # rolling
-						if (f3 < f2 < f1): # inroll
-							weight = inroll_weight * 2.0
-							weight *= switching_weight if is_switching else 1.0
-						elif (f3 > f2 > f1): # outroll
-							weight = outroll_weight
-							weight *= switching_weight if is_switching else 1.0
-						else: # redirect
-							weight = -inroll_weight
-
-						if weight > 0:
-							s = 1
-							e = (max_e*3 - (e1+e2+e3))
-						else:
-							s = -1
-							e = e1+e2+e3
-						weight *= gap_weight ** (s * has_gap_sum)
-						weight *= row_weight ** (s * row_delta_sum)
-						self.rolling = weight * e
-
+	global SCORE_MEDIAN, SCORE_SCALE
 	def iqr(v):
 		q = statistics.quantiles(v, n=4, method="inclusive")
 		return q[2] - q[0]
 
 	base_layout = make_initial_layout()
 	unique_layouts = {base_layout.clone()}
-	while len(unique_layouts) < 1000:
-		unique_layouts.add(make_random(base_layout))
+	while len(unique_layouts) < 10000:
+		unique_layouts.add(make_random())
 	layouts = list(unique_layouts)
 
 	vals = {f.name: [getattr(l.score, f.name) for l in layouts] for f in fields(Score)}
@@ -452,8 +421,8 @@ def download_target(url, dest):
 	target_dir = os.path.join(dest, f"{repo_name}_{suffix}")
 	os.makedirs(target_dir, exist_ok=True)
 
+	z = os.path.join(target_dir, f'{repo_name}.zip')
 	try:
-		z = os.path.join(target_dir, f'{repo_name}.zip')
 		subprocess.run(
 			[
 				'curl', '-L', '-f', '-s',
@@ -470,7 +439,8 @@ def download_target(url, dest):
 				zz.extractall(target_dir)
 	except Exception as e:
 		print(e)
-		os.remove(z)
+		if os.path.exists(z):
+			os.remove(z)
 		return False
 
 	os.remove(z)
@@ -724,69 +694,52 @@ def get_text_content(full_path, original_text):
 	return "\n".join(comments)
 
 def make_initial_layout() -> Layout:
-	grid = [] 
 	coords = []
-	for r in range(3):
-		for c in range(10):
+	for r in range(ROWS):
+		for c in range(COLS):
 			coords.append((EFFORT_GRID[r][c], r, c))
 	coords.sort()
 
 	letters_sorted = [ch for ch, _ in LETTERS.most_common()]
-	layout = [[' ' for _ in range(10)] for _ in range(3)]
+	letters = [[' ' for _ in range(COLS)] for _ in range(ROWS)]
 	for i, (_, r, c) in enumerate(coords):
 		if i < len(letters_sorted):
-			layout[r][c] = letters_sorted[i]
+			letters[r][c] = letters_sorted[i]
 
-	return Layout(layout)
+	return Layout(letters, source='init')
 
-def make_random(base_layout: Layout) -> Layout:
-	layout = base_layout.clone()
-
-	positions = [(i, j) for i in range(len(layout.letters)) for j in range(len(layout.letters[0])) if layout.letters[i][j] != ' ']
-	keys = [layout.letters[i][j] for i, j in positions]
-	random.shuffle(keys)
-
-	for idx, (i, j) in enumerate(positions):
-		layout.letters[i][j] = keys[idx]
-
-	return layout
-
-def flatten(letters):
-	return [item for row in letters for item in row]
+def make_random() -> Layout:
+	letters = [' '] * 4 + list(LETTERS.keys())
+	random.shuffle(letters)
+	return Layout(unflatten(letters), source="random")
 
 def crossover(parents: list[Layout], blank=' '):
-	def unflatten(flat, rows=ROWS, cols=COLS):
-		return [flat[i*cols:(i+1)*cols] for i in range(rows)]
-
-	parent1 = flatten(parents[0].letters)
-	parent2 = flatten(parents[1].letters)
+	parent1 = parents[0].flatten()
+	parent2 = parents[1].flatten()
 	length = len(parent1)
 
 	a, b = sorted(random.sample(range(length), 2))
 	child = [None] * length
-	child[a:b] = parent1[a:b]
-
-	for i in range(a, b):
-		if parent2[i] not in parent1[a:b]:
-			c = parent2[i]
-			t = parent1[i]
-			while t in parent2[a:b]:
-				t = parent1[parent2.index(t)]
-			if c not in child:
-				j = parent2.index(t)
-				if child[j] is None:
-					child[j] = c
-
 	for i in range(length):
-		if child[i] is None:
-			child[i] = parent2[i]
+		if parent1[i] == blank:
+			child[i] = blank
+	child[a:b] = parent1[a:b]
+	
+	for i in range(length):
+		target = parent2[i]
+		if target in child:
+			continue
+		for j in range(length):
+			if child[j] is None:
+				child[j] = target
+				break
 
 	return Layout(unflatten(child), source=parents[0].source+"->crossover")
 
 def fine_tune_effort(base_layout: Layout):
 	letters = [row[:] for row in base_layout.letters]
-	positions = [(r,c) for r in range(ROWS) for c in range(COLS) if letters[r][c] != ' ']
-	positions.sort(key=lambda pos: LETTERS.get(letters[pos[0]][pos[1]],0), reverse=True)
+	positions = [(r,c) for r in range(ROWS) for c in range(COLS)]
+	positions.sort(key=lambda pos: LETTERS.get(letters[pos[0]][pos[1]], 0), reverse=True)
 	candidates = [base_layout.clone()]
 
 	for (r,c) in positions:
@@ -794,10 +747,10 @@ def fine_tune_effort(base_layout: Layout):
 		best = (r,c)
 		for dr in (-1,0,1):
 			for dc in (-1,0,1):
-				nr,nc=r+dr,c+dc
-				if 0<=nr<3 and 0<=nc<10 and l[nr][nc]!=' ':
+				nr, nc = r + dr, c + dc
+				if 0 <= nr < ROWS and 0 <= nc < COLS:
 					if EFFORT_GRID[nr][nc] < EFFORT_GRID[best[0]][best[1]]:
-						best = (nr,nc)
+						best = (nr , nc)
 		l[r][c], l[best[0]][best[1]] = l[best[0]][best[1]], l[r][c]
 		candidates.append(Layout(l))
 
@@ -811,21 +764,21 @@ def optimize_effort(base_layout: Layout, result_len):
 	layouts = {base_layout.clone()}
 
 	for order in orders:
-		effort_levels = list({val for row in EFFORT_GRID for val in row if val < 10})
+		effort_levels = list({val for row in EFFORT_GRID for val in row})
 
 		if order == 'effort_asc':
 			effort_levels.sort()
 		elif order == 'effort_desc':
 			effort_levels.sort(reverse=True)
 		else:
-			effort_counts = {val: sum(1 for r in range(3) for c in range(10) if EFFORT_GRID[r][c] == val) for val in effort_levels}
+			effort_counts = {val: sum(1 for r in range(ROWS) for c in range(COLS) if EFFORT_GRID[r][c] == val) for val in effort_levels}
 			if order == 'count_asc':
 				effort_levels.sort(key=lambda x: effort_counts[x])
 			elif order == 'count_desc':
 				effort_levels.sort(key=lambda x: -effort_counts[x])
 
 		for effort_level in effort_levels:
-			group_coords = [(r, c) for r in range(3) for c in range(10) if abs(EFFORT_GRID[r][c] - effort_level) <= 0.1]
+			group_coords = [(r, c) for r in range(ROWS) for c in range(COLS) if abs(EFFORT_GRID[r][c] - effort_level) <= 1.0]
 			random.shuffle(group_coords)
 
 			for i in range(len(group_coords)):
@@ -853,13 +806,8 @@ def optimize_swap(base_layout: Layout, temperature, max_temp, fix=0):
 	else:
 		n = fix
 
-	coords = set()
-	while len(coords) < n:
-		r, c = random.randint(0, 2), random.randint(0, 9)
-		if base_layout.letters[r][c] != ' ':
-			coords.add((r, c))
-	coords = list(coords)
-
+	all_coords = [(r, c) for r in range(ROWS) for c in range(COLS)]
+	coords = random.sample(all_coords, n)
 	letters = [row[:] for row in base_layout.letters]
 
 	shuffled = coords[:]
@@ -873,18 +821,27 @@ def optimize_swap(base_layout: Layout, temperature, max_temp, fix=0):
 	return Layout(letters, source=base_layout.source)
 
 def optimize_shuffle(base_layout: Layout, result_len, length=6, custom=""):
-	if custom:
-		letters = [l for l in custom]
-	else:
-		letters = random.sample(list(LETTERS.keys()), length)
-	layouts = [base_layout.clone()]
-	l = [row[:] for row in base_layout.letters]
-	positions = [(r, c) for r in range(ROWS) for c in range(COLS) if base_layout.letters[r][c] in letters]
-	perms = permutations(letters, len(letters))
+	base_letters = base_layout.letters
 
+	if custom:
+		target_positions = [
+			(r, c) for r in range(ROWS) for c in range(COLS)
+			if base_letters[r][c] in custom
+		]
+		if ' ' in custom:
+			result_len = max(len(target_positions), result_len)
+	else:
+		all_positions = [(r, c) for r in range(ROWS) for c in range(COLS)]
+		target_positions = random.sample(all_positions, length)
+
+	letters = [base_letters[r][c] for r, c in target_positions]
+	layouts = [base_layout.clone()]
+	perms = permutations(target_positions, len(target_positions))
+
+	l = [r[:] for r in base_layout.letters]
 	for perm in perms:
-		for (r, c), ch in zip(positions, perm):
-			l[r][c] = ch
+		for i, (r, c) in enumerate(perm):
+			l[r][c] = letters[i]
 		layouts.append(Layout(l, source=base_layout.source+"->shuffle"))
 
 	if custom:
@@ -928,70 +885,61 @@ def optimize_sa(base_layout: Layout, result_len, max_iter=10000, cooling_rate=0.
 
 	return sort_unique_layouts(result, result_len)
 
-def optimize(base_layouts: list[Layout], result_path, elites_len=10):
-	is_improved = False
-	max_generation = elites_len*10
-	max_population = elites_len*10
+def optimize(base_layouts: list[Layout], result_path, elites_len=5):
+	gen_by_target = 20
+	max_generation = elites_len*gen_by_target
+	max_population = elites_len*gen_by_target
 	elites = [l.clone() for l in base_layouts[:elites_len]]
 
 	# Init population
 	unique_population = {l.clone() for l in base_layouts}
 	while len(unique_population) < max_population:
-		unique_population.add(make_random(base_layouts[0]))
+		unique_population.add(make_random())
 	population = sort_layouts(list(unique_population))
 	
 	with ProcessPoolExecutor() as executor:
-		prev = elites[-1].total
-		for gen in range(1, max_generation+1):
+		prev = elites[0].total
+		gen = 1
+		while gen <= max_generation:
+			target = gen // gen_by_target + 1
 			print(f'\r\033[K...{gen}/{max_generation}', end='')
 			random_len = int(max_population* max(0.05, 0.3 * (1 - gen/ max_generation)))
-			elite_inject = max(1, round(elites_len * min(gen / (max_generation * 0.8), 1.0)))
 
 			parents_pool = population + elites
 			parents = [best_layout(random.sample(parents_pool, 3)) for _ in range(max_population)]
-			children = [crossover(random.sample(parents, 2)) for _ in range(max_population - elite_inject - random_len)]
+			children = [crossover(random.sample(parents, 2)) for _ in range(max_population - target - random_len)]
 
 			# Make next
 			population = []
 			progress = min(gen/max_generation, 1.0)
 			result = list(executor.map(
 				optimize_worker,
-				children + elites[:elite_inject],
-				[progress] * (len(children)+elite_inject),
-				[elites_len] * (len(children)+elite_inject)
+				children + elites[:target],
+				[progress] * (len(children)+target),
+				[elites_len] * (len(children)+target)
 			))
 			for r in result:
 				population.extend(r)
 			population = sort_unique_layouts(population, max_population-random_len)
 			while len(population) < max_population:
-				population.append(make_random(elites[0]))
+				population.append(make_random())
 			population = sort_layouts(population)
 
 			# Elites
 			elites.extend([fine_tune_effort(l) for l in population])
 			elites = sort_unique_layouts(elites, elites_len)
 
-			if prev != elites[-1].total:
-				is_improved = True
+			target_total = elites[target-1].total if len(elites) >= target else elites[-1].total
+			if prev != target_total:
 				print(f'\t improved', end='')
 
-				enhanced_elites = [optimize_detail(e, elites_len) for e in elites]
-				for e in enhanced_elites:
-					elites.extend(e)
-				elites = sort_unique_layouts(elites, elites_len)
-
-				print(f' ({prev:,} -> {elites[-1].total:,})')
-				print_layout(elites[0])
-				print('')
-				prev = elites[-1].total
+				print(f' ({prev:,} -> {target_total:,})')
+				prev = target_total
 				save_result(elites, result_path)
+			else:
+				gen += 1
 
-	enhanced_elites = [optimize_detail(e, elites_len) for e in elites]
-	for e in enhanced_elites:
-		elites.extend(e)
-	elites = sort_unique_layouts(elites, elites_len)
-	save_result(elites, result_path)
-	return elites, is_improved
+	return elites
 
 def optimize_worker(layout: Layout, progress, result_len):
 	sa_weight = 0.2 + 0.2 * progress   # 0.2 - 0.4
@@ -1000,6 +948,7 @@ def optimize_worker(layout: Layout, progress, result_len):
 	pass_weight = 1.0 - (sa_weight + effort_weight + swap_weight)
 
 	weights = [max(0.0, sa_weight), max(0.0, effort_weight), max(0.0, swap_weight), max(0.0, pass_weight)]
+
 	total = sum(weights)
 	if total <= 0:
 		weights = [0.25] * 4
@@ -1019,20 +968,6 @@ def optimize_worker(layout: Layout, progress, result_len):
 		return optimize_shuffle(layout, result_len)
 	else:
 		return [layout]
-
-def optimize_detail(layout: Layout, result_len, length=8):
-	with ProcessPoolExecutor() as executor:
-		result = []
-		r = list(executor.map(
-			optimize_shuffle,
-			[layout] * multiprocessing.cpu_count(),
-			[result_len] * multiprocessing.cpu_count(),
-			[length] * multiprocessing.cpu_count()
-		))
-		for rr in r:
-			result.extend(rr)
-
-		return sort_unique_layouts(result, result_len)
 
 def print_layout(layout: Layout):
 	print(f'{layout.score.effort:,.0f}\t', end='')
@@ -1103,12 +1038,8 @@ if __name__ == '__main__':
 				result = optimize_shuffle(result[index], len(letters), len(letters), letters)
 		else:
 			# Optimize
-			is_improved = True
-			r = 1
-			while is_improved:
-				print(f'[Optimize {r}]')
-				result, is_improved = optimize(result, result_path)
-				r += 1
+			print(f'[Optimize]')
+			result = optimize(result, result_path)
 			print(f'\r\033[K...Done')
 
 		for i, l in enumerate(result, 1):
