@@ -89,24 +89,14 @@ class Layout:
 					else:
 						self.right_usage += l
 
-		max_e = max(val for row in _effort_grid for val in row)
-		min_e = min(val for row in _effort_grid for val in row)
-		half = COLS/2
-		gap_weight = 0.7
-		row_weight = 0.8
-		hand_weight = 0.7
-		center_weight = 2.0
-
 		stats = {ch: (r, c, _finger_grid[r][c], _effort_grid[r][c], c<5, 4<=c<=5) for r in range(ROWS) for c in range(COLS) if (ch := self.letters[r][c])}
 
-		max_sum = max_e * 2
+		max_sum = MAX_E * 2
 		K = max_sum ** 2
 		for pair, count in _bigrams.items():
 			a, b = pair[0], pair[1]
 			if a not in pos or b not in pos:
 				continue
-			r1, c1 = divmod(pos[a], COLS)
-			r2, c2 = divmod(pos[b], COLS)
 			r1, c1, f1, e1, h1, is_center1 = stats[a]
 			r2, c2, f2, e2, h2, is_center2 = stats[b]
 			if h1 != h2: continue
@@ -117,8 +107,8 @@ class Layout:
 			# sfb
 			if f1 == f2:
 				weight = [4.0, 2.0, 1.0][i]
-				weight *= center_weight if is_center else 1.0
-				weight *= (row_weight ** -row_delta)
+				weight *= CENTER_WEIGHT if is_center else 1.0
+				weight *= (ROW_WEIGHT ** -row_delta)
 				sfb += count * weight * (e1+e2)
 			else:
 				has_gap = abs(f1-f2) > 1
@@ -127,15 +117,15 @@ class Layout:
 					scissors += count * (e1+e2)
 				else: # rolling
 					if f1 > f2: # inroll
-						weight = [1.0, 1.8, 0.7][i]
+						weight = [0.7, 1.0, 0.5][i]
 					elif f1 < f2: # outroll
-						weight = [0.6, 1.1, 0.4][i]
-					weight *= (gap_weight ** has_gap)
-					weight *= (row_weight ** row_delta)
+						weight = [0.4, 0.6, 0.3][i]
+					weight *= (GAP_WEIGHT ** has_gap)
+					weight *= (ROW_WEIGHT ** row_delta)
 					rolling += count * weight * (K / (e1+e2))
 
-		max_sum = max_e * 3
-		min_sum = min_e * 3
+		max_sum = MAX_E * 3
+		min_sum = MIN_E * 3
 		K = max_sum ** 2
 		for pair, count in _trigrams.items():
 			a, b, c = pair[0], pair[1], pair[2]
@@ -154,21 +144,21 @@ class Layout:
 
 			# sfs
 			if f1 == f3 and f1 != f2:
-				weight = center_weight if (4<=c1<=5 or 4<=c3<=5) else 1.0
-				weight *= (row_weight ** -abs(r1-r3))
-				weight *= hand_weight if h1 != h2 else 1.0
-				sfb += count * 0.5 * weight * (e1+e3)
+				weight = CENTER_WEIGHT if (4<=c1<=5 or 4<=c3<=5) else 1.0
+				weight *= (ROW_WEIGHT ** -abs(r1-r3))
+				weight *= HAND_WEIGHT if h1 != h2 else 1.0
+				sfb += count * weight * (e1+e3)
 
 			# rolling
-			if (h1 == h2 == h3) and (f1 != f2 != f3) and \
+			if (h1 == h2 == h3) and f1 != f2 and f2 != f3 and f1 != f3 and \
 					not is_center and row_delta1 != 2 and row_delta2 != 2:
 				i = (a in VOWELS) + (b in VOWELS) + (c in VOWELS)
 				if (f1 > f2 > f3): # inroll
-					weight = [0.9, 1.7, 1.2, 0.5][i]
+					weight = [0.6, 1.0, 0.7, 0.3][i]
 				elif (f1 < f2 < f3): # outroll
-					weight = [0.5, 1.0, 0.7, 0.3][i]
+					weight = [0.4, 0.6, 0.5, 0.2][i]
 				else: # redirect
-					weight = [-0.8, -1.6, -1.0, -0.3][i]
+					weight = [-0.6, -1.0, -0.7, -0.3][i]
 
 				if weight > 0:
 					s = 1
@@ -176,8 +166,8 @@ class Layout:
 				else:
 					s = -1
 					e = K / ((max_sum + min_sum) - (e1+e2+e3))
-				weight *= gap_weight ** (s * has_gap_sum)
-				weight *= row_weight ** (s * row_delta_sum)
+				weight *= GAP_WEIGHT ** (s * has_gap_sum)
+				weight *= ROW_WEIGHT ** (s * row_delta_sum)
 				rolling += count * weight * e
 
 		self.score.sfb = sfb
@@ -225,7 +215,8 @@ EFFORT_GRID = [
 	[2.8, 2.3, 2.0, 1.5, 4.5],
 ]
 EFFORT_GRID = [r + r[::-1] for r in EFFORT_GRID]
-
+MAX_E = max(val for row in EFFORT_GRID for val in row)
+MIN_E = min(val for row in EFFORT_GRID for val in row)
 
 FINGER_GRID = [
 	[4, 3, 2, 1, 1],
@@ -235,13 +226,18 @@ FINGER_GRID = [
 FINGER_GRID = [r + [v + 4 for v in r[::-1]] for r in FINGER_GRID]
 
 SCORE_RATES = Score(
-	sfb = 0.40,
+	sfb = 0.35,
 	scissors = 0.30,
-	effort = 0.20,
-	rolling = 0.10,
+	rolling = 0.25,
+	effort = 0.10,
 )
 SCORE_MEDIAN = None
 SCORE_SCALE = None
+
+GAP_WEIGHT = 0.7
+ROW_WEIGHT = 0.8
+HAND_WEIGHT = 0.7
+CENTER_WEIGHT = 2.0
 
 EXT_TEXT = {
 	'.md', '.markdown',
@@ -330,11 +326,11 @@ def unflatten(flat, rows=ROWS, cols=COLS):
 def layout_key(l):
 	return (
 		l.total,
-		l.left_usage,
+		-abs(l.left_usage-l.right_usage),
 		-l.score.sfb,
 		-l.score.scissors,
-		-l.score.effort,
 		l.score.rolling,
+		-l.score.effort,
 	)
 
 def best_layout(layouts: list[Layout]):
