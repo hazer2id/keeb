@@ -1,19 +1,18 @@
 #!/usr/bin/env pypy3
+# pyright: basic
 
 import shutil
 import subprocess
 import string
 import zipfile
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 import os
 import re
 import math
 import random
 import multiprocessing
-import copy
 from collections import Counter
-import traceback
 from ast import literal_eval
 import signal
 from dataclasses import dataclass, field, fields
@@ -23,10 +22,10 @@ from itertools import permutations
 
 @dataclass(slots=True)
 class Score:
-	effort: int = 0
-	sfb: int = 0
-	rolling: int = 0
-	scissors: int = 0
+	effort: float = 0
+	sfb: float = 0
+	rolling: float = 0
+	scissors: float = 0
 
 @dataclass(slots=True)
 class Layout:
@@ -97,8 +96,8 @@ class Layout:
 			a, b = pair[0], pair[1]
 			if a not in pos or b not in pos:
 				continue
-			r1, c1, f1, e1, h1, is_center1 = stats[a]
-			r2, c2, f2, e2, h2, is_center2 = stats[b]
+			r1, _, f1, e1, h1, is_center1 = stats[a]
+			r2, _, f2, e2, h2, is_center2 = stats[b]
 			if h1 != h2: continue
 			row_delta = abs(r1 - r2)
 			is_center = is_center1 or is_center2
@@ -132,7 +131,7 @@ class Layout:
 			if a not in pos or b not in pos or c not in pos:
 				continue
 			r1, c1, f1, e1, h1, is_center1 = stats[a]
-			r2, c2, f2, e2, h2, is_center2 = stats[b]
+			r2, _, f2, e2, h2, is_center2 = stats[b]
 			r3, c3, f3, e3, h3, is_center3 = stats[c]
 			is_center = is_center1 or is_center2 or is_center3
 			row_delta1 = abs(r1 - r2)
@@ -231,8 +230,8 @@ SCORE_RATES = Score(
 	rolling = 0.25,
 	effort = 0.10,
 )
-SCORE_MEDIAN = None
-SCORE_SCALE = None
+SCORE_MEDIAN = Score()
+SCORE_SCALE = Score()
 
 GAP_WEIGHT = 0.7
 ROW_WEIGHT = 0.8
@@ -421,7 +420,7 @@ def download_target(url, dest):
 	os.remove(z)
 	return True
 
-def cleanup(sig, frame):
+def cleanup(_sig, _frame):
 	global TMP_PATH
 	try:
 		if TMP_PATH and os.path.exists(TMP_PATH):
@@ -584,7 +583,7 @@ def analyze_target(result_path):
 
 	# file list
 	files = []
-	for root, dirs, fs in os.walk(TMP_PATH):
+	for root, _, fs in os.walk(TMP_PATH):
 		for file in fs:
 			name, ext = os.path.splitext(file)
 			if ext.lower() in EXTENSIONS or name.lower() == 'readme':
@@ -595,8 +594,6 @@ def analyze_target(result_path):
 	letters = Counter()
 	bigrams = Counter()
 	trigrams = Counter()
-	symbols = Counter()
-	symbol_bigrams = Counter()
 	len_files = len(files)
 	with ProcessPoolExecutor() as executor:
 		for i, (l, b, t) in enumerate(executor.map(analyze_target_single, files), 1):
@@ -633,7 +630,7 @@ def analyze_target(result_path):
 
 def get_text_content(full_path, original_text):
 	filename = os.path.basename(full_path)
-	name, ext = os.path.splitext(full_path)
+	_, ext = os.path.splitext(full_path)
 	ext = ext.lower()
 	is_readme = (filename.lower() == 'readme') or filename.lower().startswith('readme.')
 
@@ -694,7 +691,7 @@ def crossover(parents: list[Layout], blank=''):
 	length = len(parent1)
 
 	a, b = sorted(random.sample(range(length), 2))
-	child = [None] * length
+	child = [blank] * length
 	for i in range(length):
 		if parent1[i] == blank:
 			child[i] = blank
